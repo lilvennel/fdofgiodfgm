@@ -1,0 +1,14 @@
+# /etc/systemd/system/asistok.service  ->  systemctl enable --now asistok
+[Unit]
+Description=AsistOK
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/asistok
+ExecStart=/usr/bin/node server.js
+Restart=always
+User=www-data
+EnvironmentFile=/opt/asistok/.env
+
+[Install]
+WantedBy=multi-user.target

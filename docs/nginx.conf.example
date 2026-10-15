@@ -1,0 +1,15 @@
+# /etc/nginx/sites-available/asistok   (luego: certbot --nginx -d tudominio.com)
+server {
+    server_name tudominio.com;
+    # La app escucha en 127.0.0.1:3000 (docker-compose ya lo publica así). Cerrá el puerto 3000 en el firewall.
+    # Si hay otro proxy delante de nginx (p. ej. Cloudflare), poné TRUST_PROXY=2 y dejá que nginx agregue ($proxy_add_x_forwarded_for).
+    client_max_body_size 8m;
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        # IMPORTANTE: SOBRESCRIBIR (no agregar) para que el cliente no pueda falsificar su IP. Con TRUST_PROXY=1 la app
+        # toma la última entrada de X-Forwarded-For (la que pone este nginx).
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

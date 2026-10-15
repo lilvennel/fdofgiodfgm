@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Vista previa · Cupones AsistOK</title>
+<style>
+  :root { --primary:#0d9488; --bg:#0f1419; --card:#1a222c; --muted:#8b9aab; --text:#e8eef4; --line:#2a3544; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--text); padding:24px; }
+  h1 { font-size:1.35rem; margin:0 0 8px; }
+  .sub { color:var(--muted); margin:0 0 24px; max-width:40rem; line-height:1.45; }
+  .stats { display:flex; gap:12px; margin-bottom:20px; }
+  .stat { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 16px; min-width:80px; text-align:center; }
+  .stat b { display:block; font-size:1.4rem; }
+  .stat span { font-size:.75rem; color:var(--muted); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; margin-bottom:28px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:8px; }
+  .top { display:flex; justify-content:space-between; align-items:center; }
+  .code { font-family:ui-monospace,monospace; font-weight:800; letter-spacing:.04em; }
+  .chip { font-size:.7rem; font-weight:700; padding:3px 8px; border-radius:999px; }
+  .chip.on { background:#0d948833; color:#5eead4; }
+  .chip.off { background:#334; color:#99a; }
+  .chip.warn { background:#854d0e44; color:#fbbf24; }
+  .pct { font-size:1.5rem; font-weight:800; color:var(--primary); }
+  .pct small { font-size:.85rem; font-weight:500; color:var(--muted); }
+  .meta { display:flex; flex-wrap:wrap; gap:6px; }
+  .meta span { font-size:.72rem; background:#243040; padding:3px 8px; border-radius:999px; color:#c5d0dc; }
+  .bar { height:6px; background:#243040; border-radius:99px; overflow:hidden; }
+  .bar i { display:block; height:100%; background:var(--primary); width:40%; }
+  .muted { color:var(--muted); font-size:.8rem; }
+  .form { max-width:560px; }
+  .form h2 { font-size:1rem; margin:0 0 4px; }
+  label { display:block; font-size:.8rem; margin:10px 0 4px; color:#a8b4c0; }
+  input, select { width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:#121820; color:var(--text); }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .sec { font-size:.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:16px 0 4px; }
+  .btn { margin-top:16px; background:var(--primary); color:#042; border:0; padding:12px 18px; border-radius:10px; font-weight:700; cursor:default; }
+  @media (max-width:560px){ .row2{ grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+  <h1>Vista previa · Panel de cupones AsistOK</h1>
+  <p class="sub">Así se ve el módulo de Super Admin → Cupones. Datos de ejemplo (no es el panel real conectado).</p>
+
+  <div class="stats">
+    <div class="stat"><b>3</b><span>códigos</span></div>
+    <div class="stat"><b>2</b><span>activos</span></div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="top"><span class="code">BIENVENIDA20</span><span class="chip on">Activo</span></div>
+      <div class="pct">20% <small>off · 3 meses</small></div>
+      <div class="meta">
+        <span>Solo altas nuevas</span><span>Todos los planes</span><span>Todos los tiers</span><span>1× por email</span>
+      </div>
+      <div class="muted">Canje: Sin límite → Sin límite</div>
+      <div class="muted">Usos 12 / ∞</div>
+    </div>
+    <div class="card">
+      <div class="top"><span class="code">PROMO7D</span><span class="chip on">Activo</span></div>
+      <div class="pct">15% <small>off · 7 días</small></div>
+      <div class="meta">
+        <span>Solo altas nuevas</span><span>Suscripción</span><span>Planes: pro,completo</span><span>1× por email</span>
+      </div>
+      <div class="muted">Canje: 01/03/2026 → 31/03/2026</div>
+      <div class="muted">Usos 20 / 50</div>
+      <div class="bar"><i style="width:40%"></i></div>
+      <div class="muted">Campaña Instagram marzo</div>
+    </div>
+    <div class="card" style="opacity:.75">
+      <div class="top"><span class="code">BLACK50</span><span class="chip off">Vencido</span></div>
+      <div class="pct">50% <small>off · 1 mes</small></div>
+      <div class="meta"><span>Cualquier cliente</span><span>Pago único</span></div>
+      <div class="muted">Canje: 20/11/2025 → 30/11/2025</div>
+      <div class="muted">Usos 50 / 50</div>
+      <div class="bar"><i style="width:100%"></i></div>
+    </div>
+  </div>
+
+  <div class="card form">
+    <h2>Crear o actualizar cupón</h2>
+    <p class="muted">Secciones: identidad, duración del beneficio, audiencia/plan, límites, ventana de canje.</p>
+    <div class="sec">Identidad y descuento</div>
+    <div class="row2">
+      <div><label>Código</label><input value="PROMO30" readonly></div>
+      <div><label>% descuento</label><input value="30" readonly></div>
+    </div>
+    <div class="sec">Duración del beneficio</div>
+    <div class="row2">
+      <div><label>Cantidad</label><input value="1" readonly></div>
+      <div><label>Unidad</label><input value="Años" readonly></div>
+    </div>
+    <div class="sec">Quién y qué plan</div>
+    <div class="row2">
+      <div><label>Audiencia</label><input value="Solo altas nuevas" readonly></div>
+      <div><label>Facturación</label><input value="Suscripción y pago único" readonly></div>
+    </div>
+    <label>Planes (tiers)</label><input value="Todos (Esencial, Pro, Completo)" readonly>
+    <div class="sec">Límites de uso</div>
+    <div class="row2">
+      <div><label>Usos totales</label><input value="100" readonly></div>
+      <div><label>Por email</label><input value="1 sola vez por email" readonly></div>
+    </div>
+    <div class="sec">Ventana de canje</div>
+    <div class="row2">
+      <div><label>Desde</label><input value="2026-04-01" readonly></div>
+      <div><label>Hasta</label><input value="2026-04-30" readonly></div>
+    </div>
+    <label>Nota interna</label><input value="Lanzamiento app" readonly>
+    <button class="btn" type="button">Guardar cupón</button>
+  </div>
+</body>
+</html>

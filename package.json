@@ -1,0 +1,14 @@
+{
+  "name": "asistok",
+  "version": "3.0.0",
+  "description": "Asist OK - Control de asistencia SaaS multi-negocio (QR dinámico + geolocalización + Mercado Pago)",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "server.js",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test test/*.test.js"
+  }
+}

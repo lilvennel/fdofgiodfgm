@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>AsistOK — Control de asistencia simple para tu negocio</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f766e'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='system-ui' font-size='14' font-weight='800' fill='%23fff'%3EA%3C/text%3E%3C/svg%3E"/>
+<style>
+  :root{
+    --bg:#f4f7fb;--card:#fff;--text:#0f172a;--muted:#64748b;--line:#e2e8f0;
+    --brand:#0f766e;--brand2:#0d9488;--brand-soft:#ccfbf1;--dark:#0b1220;
+    --violet:#4f46e5;--ok:#059669;--radius:16px;--shadow:0 10px 40px rgba(15,23,42,.08);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.5}
+  a{color:inherit;text-decoration:none}
+  img{max-width:100%;display:block}
+  .wrap{width:min(1120px,92%);margin:0 auto}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:none;border-radius:999px;padding:12px 20px;font-weight:700;font-size:.95rem;cursor:pointer;transition:.15s}
+  .btn:hover{transform:translateY(-1px);filter:brightness(1.05)}
+  .btn-primary{background:var(--brand);color:#fff;box-shadow:0 8px 24px rgba(15,118,110,.25)}
+  .btn-dark{background:var(--dark);color:#fff}
+  .btn-outline{background:#fff;border:1px solid var(--line);color:var(--text)}
+  .btn-ghost{background:transparent;border:1px solid rgba(255,255,255,.25);color:#fff}
+  .btn-block{width:100%}
+  .muted{color:var(--muted)}
+  .tag{display:inline-flex;align-items:center;gap:6px;background:var(--brand-soft);color:var(--brand);font-size:.78rem;font-weight:700;padding:6px 10px;border-radius:999px}
+  .section{padding:72px 0}
+  .section h2{font-size:clamp(1.6rem,3vw,2.2rem);letter-spacing:-.03em;margin-bottom:12px}
+  .section .lead{color:var(--muted);max-width:560px;margin-bottom:36px}
+  .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .grid-2{display:grid;grid-template-columns:1.1fr .9fr;gap:28px;align-items:center}
+  @media(max-width:900px){.grid-3,.grid-2{grid-template-columns:1fr}}
+
+  /* Nav */
+  .nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);background:rgba(244,247,251,.85);border-bottom:1px solid var(--line)}
+  .nav-inner{display:flex;align-items:center;gap:16px;height:64px}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:800}
+  .logo-mark{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#14b8a6,#0f766e);color:#fff;display:grid;place-items:center;font-weight:800}
+  .nav-links{display:flex;gap:18px;margin-left:18px;font-size:.9rem;color:var(--muted);font-weight:600}
+  .nav-links a:hover{color:var(--brand)}
+  .nav-actions{margin-left:auto;display:flex;gap:10px;align-items:center}
+  @media(max-width:760px){.nav-links{display:none}}
+
+  /* Hero */
+  .hero{padding:56px 0 40px;background:radial-gradient(1200px 500px at 80% -10%,#ccfbf1 0%,transparent 55%),var(--bg)}
+  .hero h1{font-size:clamp(2rem,5vw,3.2rem);line-height:1.08;letter-spacing:-.04em;max-width:15ch}
+  .hero h1 em{font-style:normal;color:var(--brand)}
+  .hero p{margin:16px 0 28px;color:var(--muted);max-width:48ch;font-size:1.05rem}
+  .hero-cta{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:28px}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:28px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .stat b{display:block;font-size:1.25rem}
+  .stat span{font-size:.78rem;color:var(--muted)}
+  @media(max-width:700px){.stats{grid-template-columns:1fr 1fr}}
+
+  .mock{background:var(--card);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);overflow:hidden}
+  .mock-top{background:var(--dark);color:#94a3b8;padding:10px 14px;font-size:.75rem;display:flex;gap:8px;align-items:center}
+  .dot{width:8px;height:8px;border-radius:50%;background:#334155}
+  .mock-body{padding:16px}
+  .live-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line);font-size:.9rem}
+  .pill{font-size:.72rem;font-weight:700;padding:4px 8px;border-radius:999px}
+  .pill-g{background:#d1fae5;color:#065f46}
+  .pill-x{background:#e2e8f0;color:#475569}
+  .pill-e{background:#cffafe;color:#0e7490}
+
+  /* Features */
+  .feat-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:22px;box-shadow:0 4px 16px rgba(15,23,42,.03)}
+  .feat-icon{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:var(--brand-soft);color:var(--brand);font-size:1.2rem;margin-bottom:14px}
+
+  /* Support */
+  .support{background:linear-gradient(135deg,#0f766e,#134e4a 50%,#1e3a5f);color:#fff;border-radius:24px;padding:40px 28px}
+  .support h2{color:#fff}
+  .support .lead{color:#99f6e4}
+  .support-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:24px}
+  .support-item{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:16px}
+  .support-item b{display:block;margin-bottom:6px}
+  .support-item span{font-size:.85rem;color:#ccfbf1}
+  @media(max-width:800px){.support-grid{grid-template-columns:1fr 1fr}}
+
+  /* Pricing */
+  #pricing{scroll-margin-top:80px}
+  .billing{display:inline-flex;background:#e2e8f0;padding:4px;border-radius:999px;margin-bottom:28px}
+  .billing button{border:0;background:transparent;padding:8px 16px;border-radius:999px;font-weight:700;cursor:pointer;color:var(--muted)}
+  .billing button.on{background:#fff;color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,.08)}
+  .price-card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:24px;position:relative;display:flex;flex-direction:column;min-height:100%}
+  .price-card.featured{background:var(--dark);color:#fff;border-color:var(--dark);transform:scale(1.02)}
+  .price-card.featured .muted{color:#94a3b8}
+  .badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--violet);color:#fff;font-size:.72rem;font-weight:800;padding:4px 10px;border-radius:999px}
+  .price{font-size:2.4rem;font-weight:800;letter-spacing:-.03em;margin:8px 0 4px}
+  .price small{font-size:1rem;font-weight:600;color:var(--muted)}
+  .price-card.featured .price small{color:#94a3b8}
+  .price-card ul{list-style:none;margin:18px 0 22px;flex:1}
+  .price-card li{padding:7px 0;font-size:.9rem;display:flex;gap:8px}
+  .price-card li::before{content:"✓";color:var(--ok);font-weight:800}
+  .price-card.featured li::before{color:#5eead4}
+  .addons{margin-top:28px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px}
+  .addons h3{font-size:1rem;margin-bottom:10px}
+  .addon-row{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line);font-size:.92rem}
+  .addon-row:first-of-type{border-top:0}
+
+  /* Compare */
+  table{width:100%;border-collapse:collapse;background:var(--card);border-radius:16px;overflow:hidden;border:1px solid var(--line);font-size:.9rem}
+  th,td{padding:14px 12px;text-align:left;border-bottom:1px solid var(--line)}
+  th{background:#f8fafc;font-size:.8rem;color:var(--muted)}
+  td.ok{color:var(--ok);font-weight:800}
+  td.no{color:#cbd5e1}
+
+  /* FAQ */
+  details{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px}
+  summary{cursor:pointer;font-weight:700;list-style:none}
+  summary::-webkit-details-marker{display:none}
+  details p{margin-top:10px;color:var(--muted);font-size:.92rem}
+
+  /* Footer */
+  footer{background:var(--dark);color:#94a3b8;padding:40px 0 28px;margin-top:40px}
+  footer a{color:#5eead4}
+  .foot-grid{display:flex;flex-wrap:wrap;gap:20px;justify-content:space-between;align-items:flex-start}
+  .wa{position:fixed;right:18px;bottom:18px;width:56px;height:56px;border-radius:50%;background:#25d366;color:#fff;display:grid;place-items:center;font-size:1.6rem;box-shadow:0 8px 24px rgba(37,211,102,.4);z-index:60}
+
+  .demo-banner{background:#fef3c7;color:#92400e;text-align:center;font-size:.78rem;font-weight:700;padding:8px 12px}
+</style>
+</head>
+<body>
+<div class="demo-banner">Maqueta HTML de marketing · AsistOK · abrí este archivo en el navegador (no requiere servidor)</div>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="logo" href="#"><div class="logo-mark">OK</div>Asist<span style="color:var(--brand)">OK</span></a>
+    <nav class="nav-links">
+      <a href="#producto">Producto</a>
+      <a href="#soporte">Soporte</a>
+      <a href="#pricing">Precios</a>
+      <a href="#faq">Dudas</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="btn btn-outline" href="#login">Iniciar sesión</a>
+      <a class="btn btn-primary" href="#pricing">Probar ahora</a>
+    </div>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap grid-2">
+    <div>
+      <span class="tag">Hecho para comercios y equipos en Argentina</span>
+      <h1 style="margin-top:14px">Dejá la planilla.<br>Controlá quién está<br>y <em>recuperá tiempo.</em></h1>
+      <p>AsistOK es el control de asistencia online para tu negocio: marcación simple desde el celular, ubicación del local, horas y extras claras. Fácil desde el primer día.</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="#pricing">Ver planes</a>
+        <a class="btn btn-outline" href="#producto">Cómo funciona</a>
+      </div>
+      <p class="muted" style="font-size:.85rem">100% web · sin instalar programas · listo en minutos</p>
+      <div class="stats">
+        <div class="stat"><b>1 toque</b><span>Para marcar entrada</span></div>
+        <div class="stat"><b>GPS</b><span>Anti marca desde casa</span></div>
+        <div class="stat"><b>24/7</b><span>Panel en la nube</span></div>
+        <div class="stat"><b>ARS</b><span>Cobro con Mercado Pago</span></div>
+      </div>
+    </div>
+    <div class="mock">
+      <div class="mock-top"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span style="margin-left:8px">Panel en vivo · Panadería El Sol</span></div>
+      <div class="mock-body">
+        <div style="font-weight:800;margin-bottom:8px">Equipo ahora</div>
+        <div class="live-row"><span>María López</span><span class="pill pill-g">En jornada</span></div>
+        <div class="live-row"><span>Diego Ruiz</span><span class="pill pill-e">Extra</span></div>
+        <div class="live-row"><span>Andrea Paz</span><span class="pill pill-x">Fuera</span></div>
+        <div style="margin-top:16px;background:#f0fdfa;border-radius:12px;padding:12px;font-size:.85rem">
+          <strong>Hoy</strong><br>
+          <span class="muted">12 presentes · 1 extra · 2 ausentes</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="producto">
+  <div class="wrap">
+    <span class="tag">01 · Lo esencial</span>
+    <h2>Las herramientas que usás todos los días</h2>
+    <p class="lead">Pensado para dueños que no quieren un sistema complicado: el empleado marca, vos mirás y listo.</p>
+    <div class="grid-3">
+      <article class="feat-card">
+        <div class="feat-icon">📱</div>
+        <h3 style="margin-bottom:8px">Marcación en 1 toque</h3>
+        <p class="muted">El empleado entra a su panel, toca Entrada o Salida. Opcional: QR en la puerta. Sin instalar app de tienda.</p>
+      </article>
+      <article class="feat-card">
+        <div class="feat-icon">📍</div>
+        <h3 style="margin-bottom:8px">Ubicación del local</h3>
+        <p class="muted">Configurás el punto una vez. Si intentan marcar lejos, el sistema lo rechaza y te avisa.</p>
+      </article>
+      <article class="feat-card">
+        <div class="feat-icon">⏱</div>
+        <h3 style="margin-bottom:8px">Horas y extras claras</h3>
+        <p class="muted">Mes a mes: horas normales, extras resaltadas y totales del equipo. Exportá cuando hace falta.</p>
+      </article>
+      <article class="feat-card">
+        <div class="feat-icon">🔔</div>
+        <h3 style="margin-bottom:8px">Avisos al dueño</h3>
+        <p class="muted">Llegó tarde, no marcó salida, intento fuera de zona o pedido de permiso: todo en tu bandeja.</p>
+      </article>
+      <article class="feat-card">
+        <div class="feat-icon">🗂</div>
+        <h3 style="margin-bottom:8px">Permisos y recibos</h3>
+        <p class="muted">Solicitudes de día libre o vacaciones. Módulo de recibos: subís el PDF y el empleado confirma.</p>
+      </article>
+      <article class="feat-card">
+        <div class="feat-icon">🏢</div>
+        <h3 style="margin-bottom:8px">Multi-sucursal</h3>
+        <p class="muted">Si tenés más de un local, activás el módulo y cada uno tiene su ubicación y control.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="soporte">
+  <div class="wrap">
+    <div class="support">
+      <span class="tag" style="background:rgba(255,255,255,.15);color:#fff">02 · Soporte</span>
+      <h2 style="margin-top:12px">Soporte que realmente ayuda</h2>
+      <p class="lead">Te acompañamos por WhatsApp. Sin bots eternos ni formularios que nadie lee.</p>
+      <div class="support-grid">
+        <div class="support-item"><b>01 · Horario amplio</b><span>Cuando más lo necesitás, en días hábiles.</span></div>
+        <div class="support-item"><b>02 · WhatsApp directo</b><span>Escribís como a un conocido.</span></div>
+        <div class="support-item"><b>03 · Equipo argentino</b><span>Hablamos como vos, del local real.</span></div>
+        <div class="support-item"><b>04 · Puesta en marcha</b><span>Ubicación, empleados y primera marca.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="pricing">
+  <div class="wrap" style="text-align:center">
+    <span class="tag">03 · Planes simples</span>
+    <h2>Elegí tu plan</h2>
+    <p class="lead" style="margin-left:auto;margin-right:auto">Empezás con lo esencial. Si el equipo crece, sumás empleados o módulos. Sin sorpresas.</p>
+
+    <div class="billing" role="tablist">
+      <button type="button" class="on" id="btn-m" onclick="setBill('m')">Mensual</button>
+      <button type="button" id="btn-y" onclick="setBill('y')">Pago único <span style="color:var(--ok);font-size:.75rem">mejor valor</span></button>
+    </div>
+
+    <div class="grid-3" style="text-align:left">
+      <div class="price-card">
+        <h3>Esencial</h3>
+        <div class="price" data-m="45000" data-y="385000">$ 45.000 <small>/ mes</small></div>
+        <p class="muted" style="font-size:.8rem">IVA según tu factura · precios de ejemplo</p>
+        <ul>
+          <li>Hasta 40 empleados incluidos</li>
+          <li>Marcación panel + GPS</li>
+          <li>QR opcional en puerta</li>
+          <li>Horas y extras del mes</li>
+          <li>Notificaciones al dueño</li>
+          <li>1 sucursal</li>
+        </ul>
+        <a class="btn btn-primary btn-block" href="#">Activar Esencial</a>
+      </div>
+      <div class="price-card featured">
+        <span class="badge">Más elegido</span>
+        <h3>Pro</h3>
+        <div class="price" data-m="55000" data-y="450000">$ 55.000 <small>/ mes</small></div>
+        <p class="muted" style="font-size:.8rem">Todo Esencial +</p>
+        <ul>
+          <li>Cierre automático de jornada</li>
+          <li>Permisos y vacaciones</li>
+          <li>Reportes exportables</li>
+          <li>Prioridad de soporte</li>
+          <li>Onboarding guiado</li>
+        </ul>
+        <a class="btn btn-primary btn-block" style="background:#fff;color:var(--dark)" href="#">Activar Pro</a>
+      </div>
+      <div class="price-card">
+        <h3>Completo</h3>
+        <div class="price" data-m="70000" data-y="560000">$ 70.000 <small>/ mes</small></div>
+        <p class="muted" style="font-size:.8rem">Todo Pro + módulos</p>
+        <ul>
+          <li>Multi-sucursal incluido</li>
+          <li>Recibos de sueldo incluido</li>
+          <li>Más cupo de empleados</li>
+          <li>Ideal cadenas chicas</li>
+        </ul>
+        <a class="btn btn-primary btn-block" href="#">Activar Completo</a>
+      </div>
+    </div>
+
+    <div class="addons" style="text-align:left">
+      <h3>Módulos y extras (pago único)</h3>
+      <div class="addon-row"><span>Multi-sucursal (si no está en tu plan)</span><strong>$ 60.000</strong></div>
+      <div class="addon-row"><span>Recibos de sueldo</span><strong>$ 60.000</strong></div>
+      <div class="addon-row"><span>Empleados extra (cupos adicionales)</span><strong>$ 2.500 c/u</strong></div>
+      <p class="muted" style="margin-top:12px;font-size:.85rem">¿Varias sucursales o franquicia? <a href="https://wa.me/5491100000000" style="color:var(--brand);font-weight:700">Hablemos por WhatsApp</a></p>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <span class="tag">04 · Comparativa</span>
+    <h2>Por qué lo eligen</h2>
+    <p class="lead">Comparación simple. Si no te cierra, te ayudamos a ver otra opción.</p>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>Característica</th>
+            <th>AsistOK</th>
+            <th>Excel / papel</th>
+            <th>Solo reloj cartón</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Fácil de usar el primer día</td><td class="ok">✓</td><td class="no">—</td><td class="ok">✓</td></tr>
+          <tr><td>Marca en segundos desde el celu</td><td class="ok">✓</td><td class="no">—</td><td class="no">—</td></tr>
+          <tr><td>Evita marcas desde la casa (GPS)</td><td class="ok">✓</td><td class="no">—</td><td class="no">—</td></tr>
+          <tr><td>Horas y extras del mes claras</td><td class="ok">✓</td><td class="no">a mano</td><td class="no">—</td></tr>
+          <tr><td>Avisos al dueño</td><td class="ok">✓</td><td class="no">—</td><td class="no">—</td></tr>
+          <tr><td>Soporte humano</td><td class="ok">✓</td><td class="no">—</td><td class="no">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="faq">
+  <div class="wrap" style="max-width:720px;margin:0 auto">
+    <span class="tag">05 · FAQ</span>
+    <h2>¿Dudas? Las resolvemos</h2>
+    <p class="lead">Si algo no está acá, escribinos por WhatsApp.</p>
+    <details open>
+      <summary>¿Necesito instalar una app?</summary>
+      <p>No. Funciona en el navegador del celular o la compu. El empleado puede “Agregar a inicio” para tener un ícono, pero sigue siendo web.</p>
+    </details>
+    <details>
+      <summary>¿Hace falta un QR en la puerta?</summary>
+      <p>No es obligatorio. El método principal es entrar al panel y tocar Entrada/Salida con la ubicación activada. El QR es opcional si preferís control en la entrada.</p>
+    </details>
+    <details>
+      <summary>¿Y si no hay luz en el local?</summary>
+      <p>Con el celular del empleado y datos móviles puede marcar igual. No dependés de una TV prendida. Si no hay señal de internet, se marca cuando vuelve la red o el dueño corrige a mano.</p>
+    </details>
+    <details>
+      <summary>¿Qué pasa si el GPS no anda?</summary>
+      <p>El sistema pide ubicación para validar que esté en el local. Si falla de verdad, el dueño puede cargar o corregir la marca desde su panel.</p>
+    </details>
+    <details>
+      <summary>¿Puedo cancelar cuando quiera?</summary>
+      <p>Sí, según el plan (mensual o pago único). En la versión real lo detallás en los Términos.</p>
+    </details>
+  </div>
+</section>
+
+<section class="section" style="padding-top:0">
+  <div class="wrap" style="text-align:center;background:var(--card);border:1px solid var(--line);border-radius:24px;padding:40px 24px">
+    <h2>Controlá tu equipo sin que te consuma el día</h2>
+    <p class="muted" style="margin:12px auto 22px;max-width:42ch">Más orden, menos planilla, asistencia clara. Empezá cuando quieras.</p>
+    <a class="btn btn-primary" href="#pricing">Ver planes</a>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-grid">
+    <div>
+      <div class="logo" style="color:#fff;margin-bottom:10px"><div class="logo-mark">OK</div>AsistOK</div>
+      <p style="font-size:.85rem;max-width:32ch">Control de asistencia para negocios en Argentina. Marcación simple, horas claras, cobro con Mercado Pago.</p>
+    </div>
+    <div style="font-size:.85rem">
+      <div><a href="#pricing">Precios</a></div>
+      <div><a href="#faq">Preguntas</a></div>
+      <div><a href="#">Términos</a> · <a href="#">Privacidad</a></div>
+    </div>
+    <div style="font-size:.85rem">
+      <div>Contacto: <a href="mailto:hola@asistok.app">hola@asistok.app</a></div>
+      <div style="margin-top:6px"><a href="https://wa.me/5491100000000">WhatsApp</a></div>
+      <div style="margin-top:12px">© 2026 AsistOK · Maqueta demo</div>
+    </div>
+  </div>
+</footer>
+
+<a class="wa" href="https://wa.me/5491100000000" title="WhatsApp" aria-label="WhatsApp">💬</a>
+
+<script>
+function setBill(mode){
+  document.getElementById('btn-m').classList.toggle('on', mode==='m');
+  document.getElementById('btn-y').classList.toggle('on', mode==='y');
+  document.querySelectorAll('.price').forEach(el=>{
+    const v = mode==='m' ? el.dataset.m : el.dataset.y;
+    const label = mode==='m' ? '/ mes' : ' pago único';
+    el.innerHTML = '$ ' + Number(v).toLocaleString('es-AR') + ' <small>' + label + '</small>';
+  });
+}
+</script>
+</body>
+</html>

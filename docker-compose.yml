@@ -1,0 +1,12 @@
+services:
+  asistok:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    volumes:
+      - ./data:/data
+    ports:
+      # Solo accesible desde esta máquina (el proxy / nginx). NUNCA "3000:3000": con TRUST_PROXY se podría falsificar la IP.
+      - "127.0.0.1:3000:3000"
