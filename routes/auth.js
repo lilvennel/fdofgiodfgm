@@ -11,8 +11,10 @@ const { sendMail, esc } = require('../lib/mailer');
 const { clean, emailOk, tenantView } = require('./common');
 const fc = require('../lib/fieldcrypto');
 const { sanitizeHtml } = require('../lib/sanitize');
+
 // ---- H2: confirmación de email (token de un solo uso, 24 h, guardado hasheado) ----
 const VERIFY_TTL_MS = 24 * 3600e3;
+
 function issueVerification(user) {
   const token = sec.randomToken(32), now = Date.now();
   run('DELETE FROM email_verifications WHERE user_id=?', user.id);
@@ -68,20 +70,28 @@ function issueVerification(user) {
 </html>
   `).catch((e) => console.error('[mail]', e.message));
 }
+
 // ---- H5: límites de login solo por FALLOS; cada IP se bloquea a sí misma, nadie puede dejar afuera a otra persona ----
-const LOGIN_PAIR = { free: 4, windowMs: 15 * 60e3, baseLockMs: 60e3, maxLockMs: 15 * 60e3 };   // email + IP: 4 fallos libres, después 1, 2, 4… min (tope 15)
-const LOGIN_IP = { free: 25, windowMs: 15 * 60e3, baseLockMs: 5 * 60e3, maxLockMs: 30 * 60e3 }; // IP: 25 fallos (cualquier email) y bloqueo de 5 a 30 min
+const LOGIN_PAIR = { free: 4, windowMs: 15 * 60e3, baseLockMs: 60e3, maxLockMs: 15 * 60e3 };
+const LOGIN_IP = { free: 25, windowMs: 15 * 60e3, baseLockMs: 5 * 60e3, maxLockMs: 30 * 60e3 };
+
 const setSession = (ctx, userId) => {
   const token = sec.createSession(userId);
   ctx.setCookie(cookie('sid', token, { maxAge: cfg.SESSION_DAYS * 86400 }));
 };
-const heroPublic = () => { const h = getSetting('hero', dom.DEFAULTS.hero); return { ...h, slides: (h.slides || []).map((s) => ({ id: s.id })) }; };
+
+const heroPublic = () => {
+  const h = getSetting('hero', dom.DEFAULTS.hero);
+  return { ...h, slides: (h.slides || []).map((s) => ({ id: s.id })) };
+};
+
 route('GET', '/api/public/hero/:id', (ctx) => {
   const sl = (getSetting('hero', dom.DEFAULTS.hero).slides || []).find((x) => x.id === ctx.params.id);
   const file = sl && path.join(cfg.DATA_DIR, 'uploads', 'site', sl.file);
   if (!sl || !fs.existsSync(file)) throw notFound('Imagen no encontrada');
   return { __file: { buf: fs.readFileSync(file), filename: sl.file, mime: sl.mime, inline: true, cache: 'public, max-age=86400' } };
 });
+
 route('GET', '/api/public/reviews', (ctx) => {
   const rows = all(`SELECT r.stars, r.text, r.author_name, t.id as tid, t.name as business, t.logo_path
     FROM reviews r JOIN tenants t ON t.id = r.tenant_id
@@ -91,7 +101,7 @@ route('GET', '/api/public/reviews', (ctx) => {
     logo_url: r.logo_path ? '/api/public/tenant-logo/' + r.tid : null,
   })) };
 });
-// logo público solo para reviews aprobadas (por tenant id folder)
+
 route('GET', '/api/public/tenant-logo/:tid', (ctx) => {
   const tid = String(ctx.params.tid || '').replace(/\D/g, '');
   if (!tid) throw notFound();
@@ -105,6 +115,7 @@ route('GET', '/api/public/tenant-logo/:tid', (ctx) => {
   const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
   return { __file: { buf: fs.readFileSync(file), filename: 'logo' + ext, mime, inline: true, cache: 'public, max-age=300' } };
 });
+
 route('GET', '/api/public/config', () => ({
   prices: dom.getPrices(),
   free_employees: getSetting('free_employees', 40),
@@ -115,15 +126,18 @@ route('GET', '/api/public/config', () => ({
   email_verification: cfg.REQUIRE_EMAIL_VERIFICATION,
   app_url: cfg.APP_URL,
 }));
+
 route('GET', '/api/public/legal', () => {
   const l = getSetting('legal', dom.DEFAULTS.legal);
   return { privacy_html: sanitizeHtml(l.privacy), terms_html: sanitizeHtml(l.terms), placeholder: dom.legalIsPlaceholder() };
 });
+
 route('GET', '/api/public/tenant/:slug', (ctx) => {
   const t = get('SELECT name, slug, status FROM tenants WHERE slug=?', ctx.params.slug);
   if (!t || t.status !== 'active') throw notFound('Ese negocio no existe o no está activo');
   return { name: t.name, slug: t.slug };
 });
+
 route('POST', '/api/auth/register', async (ctx) => {
   rateLimit('reg:' + ctx.ip, 8, 3600e3);
   if (!ctx.body.accept_terms) throw bad('Tenés que aceptar los Términos y condiciones para registrarte');
@@ -150,6 +164,7 @@ route('POST', '/api/auth/register', async (ctx) => {
   issueVerification(user);
   return { user: sec.publicUser(user), tenant: tenantView(get('SELECT * FROM tenants WHERE id=?', out.tid)) };
 });
+
 route('POST', '/api/auth/login', async (ctx) => {
   const email = clean(ctx.body.email).toLowerCase();
   const pw = String(ctx.body.password || '');
@@ -164,7 +179,7 @@ route('POST', '/api/auth/login', async (ctx) => {
   failClear(pairKey);
   if (u.status === 'pending') {
     let extra = '';
-    if (cfg.REQUIRE_EMAIL_VERIFICATION && !u.email_verified_at) { // pudo vencer el link: se reenvía (máx. 3 por hora)
+    if (cfg.REQUIRE_EMAIL_VERIFICATION && !u.email_verified_at) {
       try { rateLimit('resendv:' + u.id, 3, 3600e3); issueVerification(u); extra = ' Te reenviamos el email para confirmar tu dirección.'; } catch { /* límite de reenvíos */ }
     }
     throw new HttpError(403, 'AUTH_PENDING', 'Tu cuenta todavía está pendiente. Avisale a tu empleador que te autorice desde su panel (Empleados → Pendientes) y volvé a ingresar.' + extra);
@@ -174,11 +189,13 @@ route('POST', '/api/auth/login', async (ctx) => {
   run('UPDATE users SET last_login=? WHERE id=?', Date.now(), u.id);
   return { user: sec.publicUser(u) };
 });
+
 route('POST', '/api/auth/logout', (ctx) => {
   sec.destroySession(ctx.cookies.sid);
   ctx.setCookie(cookie('sid', '', { maxAge: 0 }));
   return { ok: true };
 });
+
 route('GET', '/api/auth/me', (ctx) => {
   const user = sec.userFromSession(ctx.cookies.sid);
   if (!user || user.status !== 'active') return { user: null };
@@ -191,6 +208,7 @@ route('GET', '/api/auth/me', (ctx) => {
     app_url: cfg.APP_URL,
   };
 });
+
 route('POST', '/api/auth/password', { auth: 'user', anyStatus: true }, async (ctx) => {
   const { current, password } = ctx.body;
   rateLimit('chpw:' + ctx.user.id, 10, 15 * 60e3);
@@ -198,7 +216,6 @@ route('POST', '/api/auth/password', { auth: 'user', anyStatus: true }, async (ct
   const plainEmail = fc.decryptEmail(ctx.user.email) || ctx.user.email;
   const err = sec.passwordProblem(password, plainEmail);
   if (err) throw bad(err);
-  // Primer ingreso (contraseña temporal del empleador): exigir Términos + Privacidad
   let legalSql = '';
   const legalParams = [];
   if (ctx.user.must_change_pw) {
@@ -214,6 +231,7 @@ route('POST', '/api/auth/password', { auth: 'user', anyStatus: true }, async (ct
   audit(ctx.user.id, ctx.user.tenant_id, 'password.changed', ctx.user.must_change_pw ? { legal: true } : undefined);
   return { ok: true };
 });
+
 route('POST', '/api/auth/forgot', async (ctx) => {
   rateLimit('forgot:' + ctx.ip, 6, 3600e3);
   const email = clean(ctx.body.email).toLowerCase();
@@ -272,10 +290,9 @@ route('POST', '/api/auth/forgot', async (ctx) => {
 </html>
 `);
   }
-  return { ok: true }; // misma respuesta exista o no el email
+  return { ok: true };
 });
-  return { ok: true }; // misma respuesta exista o no el email
-});
+
 route('POST', '/api/auth/reset', async (ctx) => {
   rateLimit('reset:' + ctx.ip, 10, 3600e3);
   const r = get('SELECT * FROM resets WHERE token_hash=?', sec.sha(String(ctx.body.token || '')));
@@ -284,14 +301,13 @@ route('POST', '/api/auth/reset', async (ctx) => {
   if (!u) throw bad('El link venció. Pedí uno nuevo.', 'RESET_EXPIRED');
   const err = sec.passwordProblem(ctx.body.password, u.email);
   if (err) throw bad(err);
-  // recibir este link en el email prueba que la persona controla esa dirección: queda verificado
   run('UPDATE users SET pass_hash=?, must_change_pw=0, email_verified_at=COALESCE(email_verified_at,?) WHERE id=?', await sec.hashPassword(ctx.body.password), Date.now(), u.id);
   run('DELETE FROM resets WHERE user_id=?', u.id);
   sec.destroyUserSessions(u.id);
   audit(u.id, u.tenant_id, 'password.reset');
   return { ok: true };
 });
-// Alta de empleado por link/QR: queda pendiente hasta que el dueño lo autorice
+
 route('POST', '/api/public/join/:slug', async (ctx) => {
   rateLimit('join:' + ctx.ip, 10, 3600e3);
   const t = get("SELECT * FROM tenants WHERE slug=? AND status='active'", ctx.params.slug);
@@ -315,7 +331,7 @@ route('POST', '/api/public/join/:slug', async (ctx) => {
   issueVerification({ id: newId, email, name });
   return { ok: true, email_verification: cfg.REQUIRE_EMAIL_VERIFICATION };
 });
-// H2: confirmar el email con el link recibido (token de un solo uso)
+
 route('POST', '/api/auth/verify-email', (ctx) => {
   rateLimit('verify:' + ctx.ip, 20, 3600e3);
   const r = get('SELECT * FROM email_verifications WHERE token_hash=?', sec.sha(String(ctx.body.token || '')));
@@ -329,6 +345,7 @@ route('POST', '/api/auth/verify-email', (ctx) => {
   audit(u.id, u.tenant_id, 'email.verified');
   return { ok: true };
 });
+
 route('POST', '/api/auth/resend-verification', { auth: 'user', anyStatus: true }, (ctx) => {
   if (ctx.user.email_verified_at) return { ok: true, already: true };
   rateLimit('resendv:' + ctx.user.id, 5, 3600e3);
