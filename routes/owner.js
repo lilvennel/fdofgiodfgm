@@ -8,6 +8,7 @@ const { get, all, run, tx, audit, getSetting } = require('../lib/db');
 const sec = require('../lib/security');
 const dom = require('../lib/domain');
 const H = require('../lib/hours');
+const fc = require('../lib/fieldcrypto');
 const { clean, emailOk, intIn, isoDateOk, hhmmOk, periodOf, decodeUpload } = require('./common');
 
 const A = { auth: ['owner', 'manager', 'hr'] }; // dueño, encargado o RRHH
@@ -195,7 +196,7 @@ route('POST', '/api/owner/employees', A, async (ctx) => {
   if (personalEmail && !emailOk(personalEmail.toLowerCase())) throw bad('El email personal no es válido');
   const tmp = tempPassword();
   const packed = sec.packEmail(email);
-  const sens = require('../lib/fieldcrypto').encryptUserFields({
+  const sens = fc.encryptUserFields({
     phone: clean(b.phone, 40) || null, dni: clean(b.dni, 20) || null, personal_email: personalEmail || null, notes: clean(b.notes, 400) || null,
   });
   const r = run(`INSERT INTO users(tenant_id,email,email_hash,name,pass_hash,role,status,must_change_pw,cargo,branch_id,phone,shift_start,hire_date,
@@ -232,10 +233,15 @@ route('PATCH', '/api/owner/employees/:id', A, (ctx) => {
   if (v.birthday && !isoDateOk(v.birthday)) throw bad('Fecha de cumpleaños inválida');
   if (v.hire_date && !isoDateOk(v.hire_date)) throw bad('Fecha de ingreso inválida');
   if (v.shift_start && !hhmmOk(v.shift_start)) throw bad('Horario inválido (HH:MM)');
+  if (v.personal_email && !emailOk(String(v.personal_email).toLowerCase())) throw bad('El email personal no es válido');
+  const sens = fc.encryptUserFields({
+    phone: v.phone, address: v.address, dni: v.dni, personal_email: v.personal_email,
+    notes: v.notes, emg_name: v.emg_name, emg_phone: v.emg_phone,
+  });
   run(`UPDATE users SET name=?,cargo=?,branch_id=?,phone=?,address=?,birthday=?,hire_date=?,shift_start=?,
     dni=?,personal_email=?,blood_type=?,obra_social=?,notes=?,emg_name=?,emg_rel=?,emg_phone=? WHERE id=?`,
-    v.name, v.cargo, v.branch_id, v.phone, v.address, v.birthday, v.hire_date, v.shift_start,
-    v.dni, v.personal_email, v.blood_type, v.obra_social, v.notes, v.emg_name, v.emg_rel, v.emg_phone, e.id);
+    v.name, v.cargo, v.branch_id, sens.phone, sens.address, v.birthday, v.hire_date, v.shift_start,
+    sens.dni, sens.personal_email, v.blood_type, v.obra_social, sens.notes, sens.emg_name, v.emg_rel, sens.emg_phone, e.id);
   return { ok: true };
 });
 
