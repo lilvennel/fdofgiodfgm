@@ -15,7 +15,7 @@ for (const f of ['auth', 'pay', 'owner', 'display', 'import', 'employee', 'feedb
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain; charset=utf-8' };
-const SPA_PATHS = /^\/(alta\/[^/]+|m\/[^/]+|pantalla\/[^/]+|terminos|privacidad)\/?$/;
+const SPA_PATHS = /^\/(alta\/[^/]+|m\/[^/]+|pantalla\/[^/]+|terminos|privacidad|estado)\/?$/;
 
 const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
@@ -81,14 +81,18 @@ async function handleApi(req, res, url) {
     const user = sec.userFromSession(ctx.cookies.sid);
     if (!user) throw new HttpError(401, 'UNAUTHENTICATED', 'Tenés que iniciar sesión');
     if (user.status !== 'active') throw new HttpError(403, 'ACCOUNT_DISABLED', 'Tu cuenta no está habilitada');
-    if (opts.auth !== 'user' && user.role !== opts.auth) throw new HttpError(403, 'FORBIDDEN', 'No tenés permiso para esto');
+    const allowed = opts.auth === 'user' ? null : (Array.isArray(opts.auth) ? opts.auth : [opts.auth]);
+    if (allowed && !allowed.includes(user.role)) throw new HttpError(403, 'FORBIDDEN', 'No tenés permiso para esto');
     ctx.user = user;
     if (user.role !== 'superadmin') {
       ctx.tenant = get('SELECT * FROM tenants WHERE id=?', user.tenant_id);
       if (!ctx.tenant) throw new HttpError(403, 'FORBIDDEN', 'Negocio no encontrado');
       if (!opts.anyStatus) {
         if (ctx.tenant.status === 'suspended') throw new HttpError(403, 'TENANT_SUSPENDED', 'La cuenta del negocio está suspendida');
-        if (ctx.tenant.status !== 'active') throw new HttpError(user.role === 'owner' ? 402 : 403, user.role === 'owner' ? 'PAYMENT_REQUIRED' : 'TENANT_INACTIVE', user.role === 'owner' ? 'Tu plan no está activo' : 'El negocio todavía no está activo');
+        if (ctx.tenant.status !== 'active') {
+          const isOwner = user.role === 'owner';
+          throw new HttpError(isOwner ? 402 : 403, isOwner ? 'PAYMENT_REQUIRED' : 'TENANT_INACTIVE', isOwner ? 'Tu plan no está activo' : 'El negocio todavía no está activo');
+        }
         if (user.must_change_pw) throw new HttpError(403, 'MUST_CHANGE_PW', 'Tenés que cambiar tu contraseña para continuar');
       }
     }
@@ -143,12 +147,7 @@ const server = http.createServer(async (req, res) => {
   } catch (e) {
     if (e instanceof HttpError) return send(res, e.status, { error: e.code, message: e.message, ...(e.extra || {}) });
     console.error('[error]', req.method, req.url, e);
-    // En desarrollo mostramos el detalle para poder depurar; en producción mensaje genérico
-    const detail = (!cfg.STRICT && e && e.message) ? String(e.message).slice(0, 300) : null;
-    return send(res, 500, {
-      error: 'INTERNAL',
-      message: detail ? `Error interno: ${detail}` : 'Ocurrió un error inesperado. Probá de nuevo.',
-    });
+    return send(res, 500, { error: 'INTERNAL', message: 'Ocurrió un error inesperado. Probá de nuevo.' });
   }
 });
 server.requestTimeout = 30_000;

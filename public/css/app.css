@@ -396,7 +396,7 @@ body{overflow-x:hidden}
 .emp-nav{background:rgba(255,255,255,.92)!important;backdrop-filter:blur(12px);border-top:1px solid #e2e8f0;box-shadow:0 -4px 20px rgba(15,23,42,.04)}
 .emp-nav button.active{color:#0f766e!important}
 .emp-nav button.active .ico{transform:scale(1.1)}
-.topbar .brand-mark:not(.brand-mark-logo){background:linear-gradient(135deg,#14b8a6,#0f766e)!important;font-size:.72rem!important;letter-spacing:-.03em}
+.topbar .brand-mark{background:linear-gradient(135deg,#14b8a6,#0f766e)!important;font-size:.72rem!important;letter-spacing:-.03em}
 .status-live{border-radius:14px!important;padding:14px 16px!important;font-size:.95rem}
 .big-btn{border-radius:16px!important;box-shadow:0 4px 12px rgba(15,23,42,.06)}
 
@@ -792,13 +792,10 @@ td.diff-pos{color:#047857;font-weight:600}
 /* Brand mark logo (clock+check) replaces OK text */
 .brand-mark-logo, .logo-mark {
   width: 36px; height: 36px; border-radius: 10px;
-  background-color: #0f766e !important;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none'%3E%3Ccircle cx='32' cy='32' r='18' stroke='%23fff' stroke-width='3.5'/%3E%3Cpath d='M32 20v13l9 5' stroke='%23fff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='46' cy='46' r='11' fill='%2314b8a6'/%3E%3Cpath d='M41.5 46.5l3 3 6-7' stroke='%23fff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
-  background-size: 72% !important;
-  background-position: center !important;
-  background-repeat: no-repeat !important;
+  background: #0f766e center/72% no-repeat;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none'%3E%3Ccircle cx='32' cy='32' r='18' stroke='%23fff' stroke-width='3.5'/%3E%3Cpath d='M32 20v13l9 5' stroke='%23fff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='46' cy='46' r='11' fill='%2314b8a6'/%3E%3Cpath d='M41.5 46.5l3 3 6-7' stroke='%23fff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   color: transparent !important; font-size: 0 !important;
-  display: inline-block !important; flex-shrink: 0;
+  display: inline-block; flex-shrink: 0;
 }
 .logo-mark { width: 40px; height: 40px; border-radius: 12px; }
 
@@ -1164,8 +1161,3 @@ td.diff-pos{color:#047857;font-weight:600}
 .ok-foot .ok-foot-h{font-weight:700;color:#e2e8f0;margin-bottom:8px;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
 .ok-foot .ok-disclaimer{font-size:.75rem;line-height:1.5;color:#64748b;max-width:42ch;margin:0}
 .ok-foot a{display:inline-block;margin:3px 0}
-
-
-/* Novedades colapsables (panel cliente) */
-.news-card .news-body { margin-top: 10px; }
-.news-card .news-body.hidden { display: none !important; }

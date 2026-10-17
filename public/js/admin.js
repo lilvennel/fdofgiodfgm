@@ -167,7 +167,10 @@ async function precios() {
       ${n('mod_suc', 'Multi-sucursal', p.mod_suc)}
       ${n('mod_rec', 'Recibos de sueldo', p.mod_rec)}
       ${n('extra', 'Empleado extra (c/u)', p.extra)}
-      ${n('free_employees', 'Empleados incluidos en el plan', d.free_employees)}
+      <div class="form-group"><label for="free_employees">Empleados incluidos en el plan</label>
+        <input id="free_employees" name="free_employees" type="number" min="1" max="10000" step="1" value="${d.free_employees}" required>
+        <p class="muted" style="font-size:.75rem;margin-top:4px">Cantidad gratis por plan (ej. 40). Después se cobra el extra por empleado.</p>
+      </div>
     </div>
     <button class="btn btn-primary btn-block mt" type="submit">Guardar precios</button>
   </form>
@@ -206,7 +209,7 @@ async function precios() {
     ${d.history.length ? d.history.map((h) => html`<div class="changelog-item"><div class="muted">${fmtDateTime(h.at)}</div><div style="font-size:.85rem">Esencial ${money(h.from?.sub)} → ${money(h.to?.sub)} · Único ${money(h.from?.once)} → ${money(h.to?.once)}</div></div>`) : html`<p class="muted">Sin cambios todavía.</p>`}
   </div>`);
 }
-forms.prices = async (v) => { const o = Object.fromEntries(Object.entries(v).map(([k, x]) => [k, +x])); await api('PUT', '/api/admin/prices', o); toast('Precios guardados'); load(); };
+forms.prices = async (v) => { const o = Object.fromEntries(Object.entries(v).map(([k, x]) => [k, +x])); await api('PUT', '/api/admin/prices', o); try { S.cfg = await get('/api/public/config'); } catch {} toast('Precios guardados'); load(); };
 forms.schedule = async (v) => {
   const num = (x) => +x;
   await post('/api/admin/prices/schedule', {

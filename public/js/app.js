@@ -35,8 +35,14 @@ document.addEventListener('input', (e) => { const el = e.target.closest('[data-i
 document.addEventListener('change', (e) => { const el = e.target.closest('[data-change]'); if (el) acts[el.dataset.change]?.(el, e); });
 
 export function fail(err) {
-  if (!err.status) console.error(err); // los errores esperados (validaciones del servidor) solo se muestran al usuario
+  if (!err.status) console.error(err);
   if (err.status === 401) { S.me = null; showAuth(); return toast('Tu sesión venció. Ingresá de nuevo.'); }
+  // Rol cambiado o sin permiso: re-evaluar sesión (evita panel colgado en bucle)
+  if (err.status === 403 && (err.code === 'FORBIDDEN' || err.code === 'ACCOUNT_DISABLED')) {
+    toast(err.message || 'No tenés permiso para esto');
+    boot();
+    return;
+  }
   if (['PAYMENT_REQUIRED', 'TENANT_SUSPENDED', 'TENANT_INACTIVE', 'ACCOUNT_DISABLED'].includes(err.code)) { boot(); return; }
   if (err.code === 'MUST_CHANGE_PW') { boot(); return; }
   toast(err.message || 'Ocurrió un error');
@@ -46,8 +52,44 @@ export function fail(err) {
 const eyeless = (id, label, type = 'text', extra = '') => html`<div class="form-group"><label for="${id}">${label}</label><input id="${id}" name="${id}" type="${type}" ${raw(extra)}></div>`;
 let authTab = 'login';
 
-export function showAuth(message) {
-  const c = S.cfg, h = c.hero, ct = c.contact;
+function turnstileSlot() {
+  const key = S.cfg?.turnstile_site_key;
+  if (!key) return '';
+  return html`<div class="form-group ts-wrap"><div class="cf-turnstile" data-sitekey="${key}" data-theme="auto"></div>
+    <input type="hidden" name="turnstile_token" id="ts-token" value=""></div>`;
+}
+function loadTurnstile() {
+  const key = S.cfg?.turnstile_site_key;
+  if (!key) return;
+  window.__tsToken = '';
+  window.__onTs = (tok) => { window.__tsToken = tok; const el = document.getElementById('ts-token'); if (el) el.value = tok; };
+  if (!document.getElementById('cf-ts-script')) {
+    const s = document.createElement('script');
+    s.id = 'cf-ts-script';
+    s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    s.async = true;
+    s.onload = () => {
+      document.querySelectorAll('.cf-turnstile').forEach((el) => {
+        if (el.dataset.rendered) return;
+        el.dataset.rendered = '1';
+        try { window.turnstile.render(el, { sitekey: key, callback: window.__onTs }); } catch {}
+      });
+    };
+    document.head.appendChild(s);
+  } else if (window.turnstile) {
+    document.querySelectorAll('.cf-turnstile').forEach((el) => {
+      if (el.dataset.rendered) return;
+      el.dataset.rendered = '1';
+      try { window.turnstile.render(el, { sitekey: key, callback: window.__onTs }); } catch {}
+    });
+  }
+}
+export async function showAuth(message, opts = {}) {
+  // Refrescar precios/textos si la landing ya estaba abierta
+  if (!opts.skipCfg) {
+    try { S.cfg = await get('/api/public/config'); } catch {}
+  }
+  const c = S.cfg || {}, h = c.hero || {}, ct = c.contact || {};
   const reg = authTab === 'reg', forgot = authTab === 'forgot';
   const waHref = ct.wa_link || 'https://wa.me/5491100000000';
   const wa = ct.wa_link ? html`<a href="${ct.wa_link}" target="_blank" rel="noopener">${ct.wa_label || 'WhatsApp'}</a>` : html`<a href="${waHref}" target="_blank" rel="noopener">WhatsApp</a>`;
@@ -69,7 +111,7 @@ export function showAuth(message) {
         <option value="sub">Suscripción mensual</option>
         <option value="once">Pago único (de por vida)</option></select></div>
       ${eyeless('coupon', 'Código de descuento (opcional)', 'text', 'autocomplete="off" style="text-transform:uppercase"')}
-      <p class="muted" style="font-size:.85rem;margin-bottom:8px">Incluye hasta ${c.free_employees} empleados.</p>
+      <p class="muted" style="font-size:.85rem;margin-bottom:8px">Incluye hasta ${c.free_employees ?? 40} empleados.</p>
       <label class="terms-check" style="display:flex;gap:10px;align-items:flex-start;margin:12px 0 8px">
         <input type="checkbox" name="accept_terms" value="1" required style="margin-top:3px;width:18px;height:18px;flex-shrink:0">
         <span class="muted" style="font-size:.85rem;line-height:1.4">Leí y acepto los <a href="/terminos" target="_blank" rel="noopener">Términos y condiciones</a>.</span>
@@ -79,6 +121,7 @@ export function showAuth(message) {
         <span class="muted" style="font-size:.85rem;line-height:1.4">Leí y acepto la <a href="/privacidad" target="_blank" rel="noopener">Política de privacidad</a>.</span>
       </label>
       <p class="muted" style="font-size:.8rem;margin:-8px 0 12px">Al registrarte te enviamos un email para <strong>confirmar tu dirección</strong>. Sin eso no podés pagar ni activar el negocio.</p>
+      ${turnstileSlot()}
       <button class="btn btn-primary btn-block" type="submit">Crear cuenta y continuar al pago</button>
     </form>`
   : html`
@@ -86,6 +129,7 @@ export function showAuth(message) {
       ${eyeless('email', 'Email', 'email', 'required autocomplete="username"')}
       ${eyeless('password', 'Contraseña', 'password', 'required autocomplete="current-password"')}
       <a class="login-link" href="#" data-act="auth-tab" data-tab="forgot">¿Olvidaste tu contraseña?</a>
+      ${turnstileSlot()}
       <button class="btn btn-primary btn-block" type="submit">Ingresar</button>
     </form>`;
 
@@ -200,7 +244,7 @@ export function showAuth(message) {
       <div class="wrap" style="text-align:center">
         <span class="tag">03 · Planes simples</span>
         <h2>Elegí tu plan</h2>
-        <p class="lead" style="margin-left:auto;margin-right:auto">Empezás con lo esencial. Si el equipo crece, sumás empleados o módulos. Sin sorpresas.</p>
+        <p class="lead" style="margin-left:auto;margin-right:auto">Cada plan incluye una cantidad de empleados. Si el equipo crece, sumás extras o módulos sin cambiar de plan de golpe.</p>
         <div class="billing" role="tablist" style="display:inline-flex;background:#e2e8f0;padding:4px;border-radius:999px;margin-bottom:28px">
           <button type="button" class="on" id="btn-m" data-act="bill-mode" data-mode="m" style="border:0;background:transparent;padding:8px 16px;border-radius:999px;font-weight:700;cursor:pointer">Mensual</button>
           <button type="button" id="btn-y" data-act="bill-mode" data-mode="y" style="border:0;background:transparent;padding:8px 16px;border-radius:999px;font-weight:700;cursor:pointer;color:#64748b">Pago único <span style="color:#059669;font-size:.75rem">mejor valor</span></button>
@@ -209,7 +253,7 @@ export function showAuth(message) {
           <div class="price-card">
             <h3>Esencial</h3>
             <div class="price" data-m="${c.prices.esencial_m ?? c.prices.sub}" data-y="${c.prices.esencial_y ?? c.prices.once}">${money(c.prices.esencial_m ?? c.prices.sub)} <small>/ mes</small></div>
-            <p class="muted" style="font-size:.8rem">Hasta ${c.free_employees} empleados · 1 sucursal</p>
+            <p class="muted" style="font-size:.8rem"><strong>${c.free_employees ?? 40} empleados incluidos</strong> · 1 sucursal<br><span style="font-size:.75rem">Podés sumar más cuando los necesites (${money(c.prices.extra)} c/u, pago único)</span></p>
             <ul>
               <li>Marcación panel + GPS</li>
               <li>QR opcional en puerta</li>
@@ -222,7 +266,7 @@ export function showAuth(message) {
             <span class="badge" style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:#4f46e5;color:#fff;font-size:.72rem;font-weight:800;padding:4px 10px;border-radius:999px">Más elegido</span>
             <h3>Pro</h3>
             <div class="price" data-m="${c.prices.pro_m ?? 55000}" data-y="${c.prices.pro_y ?? 450000}">${money(c.prices.pro_m ?? 55000)} <small>/ mes</small></div>
-            <p class="muted" style="font-size:.8rem">Todo Esencial +</p>
+            <p class="muted" style="font-size:.8rem"><strong>${c.free_employees ?? 40} empleados incluidos</strong> · todo Esencial +<br><span style="font-size:.75rem">Extras al mismo precio (${money(c.prices.extra)} c/u)</span></p>
             <ul>
               <li>Cierre automático de jornada</li>
               <li>Permisos y vacaciones</li>
@@ -234,11 +278,11 @@ export function showAuth(message) {
           <div class="price-card">
             <h3>Completo</h3>
             <div class="price" data-m="${c.prices.completo_m ?? 70000}" data-y="${c.prices.completo_y ?? 560000}">${money(c.prices.completo_m ?? 70000)} <small>/ mes</small></div>
-            <p class="muted" style="font-size:.8rem">Todo Pro + módulos</p>
+            <p class="muted" style="font-size:.8rem"><strong>${c.free_employees ?? 40} empleados incluidos</strong> · todo Pro + módulos<br><span style="font-size:.75rem">Extras disponibles (${money(c.prices.extra)} c/u)</span></p>
             <ul>
               <li>Multi-sucursal incluido</li>
               <li>Recibos de sueldo incluido</li>
-              <li>Más cupo de empleados</li>
+              <li>Misma base de empleados + extras</li>
               <li>Ideal cadenas chicas</li>
             </ul>
             <button class="btn btn-primary btn-block" type="button" data-act="pick-plan" data-tier="completo" data-plan-billing data-billing="sub">Activar Completo</button>
@@ -248,7 +292,7 @@ export function showAuth(message) {
           <h3 style="font-size:1rem;margin-bottom:10px">Módulos y extras (pago único)</h3>
           <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid #e2e8f0;font-size:.92rem"><span>Multi-sucursal</span><strong>${money(c.prices.mod_suc)}</strong></div>
           <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid #e2e8f0;font-size:.92rem"><span>Recibos de sueldo</span><strong>${money(c.prices.mod_rec)}</strong></div>
-          <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid #e2e8f0;font-size:.92rem"><span>Empleados extra</span><strong>${money(c.prices.extra)} c/u</strong></div>
+          <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid #e2e8f0;font-size:.92rem;gap:12px"><span>Empleado extra <span class="muted" style="font-size:.8rem">(cuando superás los incluidos del plan)</span></span><strong style="white-space:nowrap">${money(c.prices.extra)} c/u</strong></div>
         </div>
       </div>
     </section>
@@ -316,7 +360,7 @@ export function showAuth(message) {
         <div style="flex:1;min-width:200px">
           <div class="logo" style="color:#fff;margin-bottom:10px"><div class="logo-mark" aria-hidden="true"></div><span style="font-weight:800;letter-spacing:-.02em">AsistOK</span></div>
           <p style="font-size:.85rem;max-width:36ch;margin-bottom:12px">Control de asistencia para negocios en Argentina.</p>
-          <p class="ok-disclaimer">AsistOK es un sistema de control de asistencia laboral para negocios de Argentina. Los registros de entrada y salida, horas, extras, permisos, certificados y recibos son responsabilidad de cada empleador. La plataforma es una herramienta técnica de apoyo y no reemplaza el cumplimiento de la Ley de Contrato de Trabajo, AFIP ni otras obligaciones laborales. La geolocalización se usa solo en el momento de marcar asistencia, no es un seguimiento continuo.</p>
+          <p class="ok-disclaimer">Sistema de control de asistencia para negocios de Argentina. Los registros, horas y documentos son responsabilidad de cada empleador; AsistOK es una herramienta de apoyo y no reemplaza la LCT ni otras obligaciones laborales. La ubicación se usa solo al marcar, no es seguimiento continuo.</p>
         </div>
         <div style="font-size:.85rem">
           <div class="ok-foot-h">Producto</div>
@@ -327,6 +371,7 @@ export function showAuth(message) {
         <div style="font-size:.85rem">
           <div class="ok-foot-h">Legal</div>
           <div><a href="/privacidad">Privacidad</a></div>
+          <div><a href="/estado">Estado del servicio</a></div>
           <div><a href="/terminos">Términos</a></div>
           <div><a href="#" data-act="cookies-open">Preferencias de cookies</a></div>
         </div>
@@ -341,13 +386,14 @@ export function showAuth(message) {
     <a class="wa-fab" href="${waHref}" target="_blank" rel="noopener" title="WhatsApp" aria-label="WhatsApp">💬</a>
   </div>`);
   ensureCookieUI();
-  if (reg || forgot || message) setTimeout(() => document.getElementById('login')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   if (reg && typeof window !== 'undefined') {
     const tier = window.__pickTier, bill = window.__pickBilling;
     if (tier) { const s = document.getElementById('plan_tier'); if (s) s.value = tier; }
     if (bill) { const s = document.getElementById('plan'); if (s) s.value = bill; }
   }
   initLandingEffects();
+  if (typeof loadTurnstile === 'function') loadTurnstile();
+  startLandingCfgPoll();
 }
 
 let heroTimer;
@@ -358,7 +404,13 @@ function startHero() {
   let i = 0;
   heroTimer = setInterval(() => { if (!document.querySelector('.hero-slide')) return clearInterval(heroTimer); slides[i].classList.remove('active'); i = (i + 1) % slides.length; slides[i].classList.add('active'); }, 6000);
 }
-acts['auth-tab'] = (el) => { authTab = el.dataset.tab || 'login'; showAuth(); setTimeout(() => document.getElementById('login')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80); };
+acts['auth-tab'] = async (el) => {
+  authTab = el.dataset.tab || 'login';
+  const y = window.scrollY;
+  await showAuth(undefined, { skipCfg: true }); // pestaña: no hace falta re-pedir config
+  window.scrollTo(0, y);
+  requestAnimationFrame(() => window.scrollTo(0, y));
+};
 acts['bill-mode'] = (el) => {
   const mode = el.dataset.mode;
   document.getElementById('btn-m')?.classList.toggle('on', mode === 'm');
@@ -370,32 +422,32 @@ acts['bill-mode'] = (el) => {
   });
   document.querySelectorAll('[data-plan-billing]').forEach((b) => { b.dataset.billing = mode === 'y' ? 'once' : 'sub'; });
 };
-acts['pick-plan'] = (el) => {
+acts['pick-plan'] = async (el) => {
   authTab = 'reg';
   window.__pickTier = el.dataset.tier || 'esencial';
   window.__pickBilling = el.dataset.billing || 'sub';
-  showAuth();
+  await showAuth();
   setTimeout(() => document.getElementById('login')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
 };
-acts['scroll-login'] = () => {
+acts['scroll-login'] = async () => {
   authTab = 'login';
-  showAuth();
+  await showAuth();
   setTimeout(() => document.getElementById('login')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
 };
 
 
 forms.login = async (v) => {
-  const r = await post('/api/auth/login', { email: v.email, password: v.password });
+  const r = await post('/api/auth/login', { email: v.email, password: v.password, turnstile_token: v.turnstile_token || window.__tsToken || '' });
   S.me = null; await boot();
 };
 forms.register = async (v) => {
   if (!v.accept_terms) throw Object.assign(new Error('Tenés que aceptar los Términos y condiciones'), { status: 400 });
   if (!v.accept_privacy) throw Object.assign(new Error('Tenés que aceptar la Política de privacidad'), { status: 400 });
-  await post('/api/auth/register', { ...v, accept_terms: true, accept_privacy: true });
+  await post('/api/auth/register', { ...v, accept_terms: true, accept_privacy: true, turnstile_token: v.turnstile_token || window.__tsToken || '' });
   await boot();
 };
-forms.forgot = async (v) => { await post('/api/auth/forgot', { email: v.email }); authTab = 'login'; showAuth('Si el email existe, te enviamos un link para recuperar tu contraseña.'); };
-acts.logout = async () => { await post('/api/auth/logout'); S.me = null; S.markCode = null; authTab = 'login'; cleanUrl(); applyTheme(); showAuth(); };
+forms.forgot = async (v) => { await post('/api/auth/forgot', { email: v.email }); authTab = 'login'; await showAuth('Si el email existe, te enviamos un link para recuperar tu contraseña.'); };
+acts.logout = async () => { await post('/api/auth/logout'); S.me = null; S.markCode = null; authTab = 'login'; cleanUrl(); applyTheme(); await showAuth(); };
 acts.dark = () => toggleDark();
 
 // ---------- Cambio de contraseña ----------
@@ -545,6 +597,28 @@ acts['cookies-save'] = () => {
   toast('Preferencias guardadas');
 };
 
+
+async function statusPage() {
+  let h = { ok: false };
+  try { h = await get('/api/health'); } catch (e) { h = { ok: false, error: e.message }; }
+  const ok = !!h.ok;
+  render(html`<main class="dash-body" style="max-width:520px;margin:40px auto">
+    <a href="/" class="btn btn-outline btn-sm mb">← Volver</a>
+    <div class="card" style="text-align:center">
+      <div style="font-size:2.5rem;margin-bottom:8px">${ok ? '✅' : '⚠️'}</div>
+      <h1 style="font-size:1.3rem;margin-bottom:6px">Estado de AsistOK</h1>
+      <p class="muted mb">${ok ? 'El servicio está operativo.' : 'Hay un problema con el servicio o la base de datos.'}</p>
+      <div style="text-align:left;font-size:.88rem;line-height:1.6">
+        <div class="row between"><span>API / base de datos</span><strong>${h.db === 'up' ? 'OK' : 'Error'}</strong></div>
+        <div class="row between"><span>Emails (Resend)</span><strong>${h.mail ? 'Configurado' : 'No configurado'}</strong></div>
+        <div class="row between"><span>Mercado Pago</span><strong>${h.mp ? 'Configurado' : 'No configurado'}</strong></div>
+        <div class="row between"><span>CAPTCHA</span><strong>${h.turnstile ? 'Activo' : 'Opcional / off'}</strong></div>
+        <div class="row between"><span>Último backup</span><strong>${h.backup?.at ? new Date(h.backup.at).toLocaleString('es-AR') : '—'}</strong></div>
+        <div class="row between"><span>Hora servidor</span><strong>${h.time ? new Date(h.time).toLocaleString('es-AR') : '—'}</strong></div>
+      </div>
+    </div>
+  </main>`);
+}
 // ---------- Páginas simples ----------
 async function legalPage(kind) {
   const l = await get('/api/public/legal');
@@ -580,7 +654,7 @@ function resetPage(token) {
     <form data-form="reset" data-token="${token}">${eyeless('password', 'Nueva contraseña (mínimo 8)', 'password', 'required minlength="8" autocomplete="new-password"')}
     <button class="btn btn-primary btn-block" type="submit">Guardar</button></form></div></div>`);
 }
-forms.reset = async (v, f) => { await post('/api/auth/reset', { token: f.dataset.token, password: v.password }); cleanUrl(); authTab = 'login'; showAuth('Listo. Ya podés ingresar con tu nueva contraseña.'); };
+forms.reset = async (v, f) => { await post('/api/auth/reset', { token: f.dataset.token, password: v.password }); cleanUrl(); authTab = 'login'; await showAuth('Listo. Ya podés ingresar con tu nueva contraseña.'); };
 
 // ---------- Sugerencias y reportes (dueño y empleado) ----------
 acts['feedback-open'] = (el) => openModal(html`<h3 style="margin-bottom:4px">Reportar un problema o enviar una idea</h3><p class="muted mb">Lo lee el equipo de AsistOK. No hace falta que sea perfecto.</p>
@@ -603,8 +677,10 @@ async function waitPayment() {
 
 export async function boot() {
   const path = location.pathname.replace(/\/+$/, '') || '/';
-  if (!S.cfg) S.cfg = await get('/api/public/config');
+  // Siempre pedir config fresca (precios, textos, empleados incluidos, etc.)
+  try { S.cfg = await get('/api/public/config'); } catch (e) { if (!S.cfg) throw e; }
   if (path.startsWith('/pantalla/')) return renderDisplay(path.split('/')[2]);
+  if (path === '/estado') { await statusPage(); return; }
   if (path === '/terminos' || path === '/privacidad') { await legalPage(path.slice(1)); ensureCookieUI(); return; }
   if (path.startsWith('/alta/')) return joinPage(path.split('/')[2]);
   if (q.get('verify')) return verifyPage(q.get('verify'));
@@ -616,7 +692,7 @@ export async function boot() {
   const me = await get('/api/auth/me');
   S.me = me.user ? me : null;
   applyTheme();
-  if (!S.me) { showAuth(S.markCode ? 'Ingresá para marcar tu asistencia.' : undefined); ensureCookieUI(); return; }
+  if (!S.me) { await showAuth(S.markCode ? 'Ingresá para marcar tu asistencia.' : undefined, { skipCfg: true }); ensureCookieUI(); return; }
 
   const { user, tenant } = S.me;
   if (user.role === 'superadmin') return renderAdmin();
@@ -633,7 +709,7 @@ export async function boot() {
     return paymentScreen(q.get('pay') === 'fail' ? 'El pago no se completó. Podés intentarlo de nuevo.' : '');
   }
   if (q.get('pay')) { toast('Pago recibido'); cleanUrl(); q.delete('pay'); }
-  if (user.role === 'owner') return renderOwner();
+  if (user.role === 'owner' || user.role === 'manager' || user.role === 'hr') return renderOwner();
   if (S.markCode) return renderMark();
   return renderEmployee();
 }
@@ -816,6 +892,45 @@ async function loadReviews() {
 
 
 boot().catch((e) => render(html`<p style="padding:40px;text-align:center">${e.message}</p>`));
+
+// Landing: precios y textos se refrescan solos (poll + al volver a la pestaña)
+let landingCfgTimer = null;
+function startLandingCfgPoll() {
+  stopLandingCfgPoll();
+  const tick = async () => {
+    if (S.me || !document.querySelector('.ok-landing')) return stopLandingCfgPoll();
+    try {
+      const cfg = await get('/api/public/config');
+      const key = (c) => JSON.stringify({ p: c?.prices, f: c?.free_employees, h: c?.hero, ct: c?.contact });
+      if (key(S.cfg) === key(cfg)) return;
+      const y = window.scrollY;
+      S.cfg = cfg;
+      await showAuth(undefined, { skipCfg: true });
+      window.scrollTo(0, y);
+    } catch {}
+  };
+  landingCfgTimer = setInterval(tick, 20000); // cada 20 s mientras la landing esté abierta
+  // Primera pasada a los 5 s por si el admin cambió recién
+  setTimeout(tick, 5000);
+}
+function stopLandingCfgPoll() {
+  if (landingCfgTimer) { clearInterval(landingCfgTimer); landingCfgTimer = null; }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  if (S.me) return;
+  if (!document.querySelector('.ok-landing')) return;
+  get('/api/public/config').then(async (cfg) => {
+    const key = (c) => JSON.stringify({ p: c?.prices, f: c?.free_employees });
+    if (key(S.cfg) === key(cfg)) return;
+    const y = window.scrollY;
+    S.cfg = cfg;
+    await showAuth(undefined, { skipCfg: true });
+    window.scrollTo(0, y);
+  }).catch(() => {});
+});
+
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 

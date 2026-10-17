@@ -14,84 +14,33 @@ const { sanitizeHtml } = require('../lib/sanitize');
 
 // ---- H2: confirmación de email (token de un solo uso, 24 h, guardado hasheado) ----
 const VERIFY_TTL_MS = 24 * 3600e3;
-
 function issueVerification(user) {
   const token = sec.randomToken(32), now = Date.now();
   run('DELETE FROM email_verifications WHERE user_id=?', user.id);
   run('INSERT INTO email_verifications(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)', sec.sha(token), user.id, now + VERIFY_TTL_MS, now);
   const link = `${cfg.APP_URL}/?verify=${token}`;
   const to = fc.decryptEmail(user.email) || user.email;
-
-  sendMail(to, 'Confirmá tu email · AsistOK', `
-<!DOCTYPE html>
-<html lang="es">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background-color:#f0fdfa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0fdfa;padding:40px 16px;">
-    <tr><td align="center">
-      <table width="100%" style="max-width:520px;background-color:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(15,118,110,0.08);">
-        <tr>
-          <td style="background:linear-gradient(135deg,#0f766e 0%,#14b8a6 100%);padding:32px 40px;text-align:center;">
-            <span style="color:#ffffff;font-size:22px;font-weight:700;">⏱ AsistOK</span>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:40px 40px 32px;">
-            <h1 style="margin:0 0 12px;font-size:24px;font-weight:700;color:#0f172a;line-height:1.3;">Confirmá tu email</h1>
-            <p style="margin:0 0 28px;font-size:15px;color:#64748b;line-height:1.6;">
-              Hola ${esc(user.name)}, gracias por registrarte en <strong style="color:#0f766e;">AsistOK</strong>. Solo falta un paso para activar tu cuenta.
-            </p>
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
-              <tr><td align="center">
-                <a href="${link}" style="display:inline-block;background-color:#0f766e;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(15,118,110,0.35);">
-                  Verificar mi correo
-                </a>
-              </td></tr>
-            </table>
-            <p style="margin:0 0 8px;font-size:14px;color:#64748b;line-height:1.5;">Este enlace es válido por <strong>24 horas</strong>.</p>
-            <p style="margin:0 0 24px;font-size:14px;color:#64748b;line-height:1.5;">Si no creaste una cuenta en AsistOK, podés ignorar este correo.</p>
-            <div style="height:1px;background-color:#e2e8f0;margin:28px 0;"></div>
-            <p style="margin:0;font-size:13px;color:#94a3b8;line-height:1.5;">
-              Si el botón no funciona, copiá y pegá este enlace:<br>
-              <a href="${link}" style="color:#0f766e;word-break:break-all;">${link}</a>
-            </p>
-          </td>
-        </tr>
-        <tr>
-          <td style="background-color:#f8fafc;padding:24px 40px;text-align:center;border-top:1px solid #e2e8f0;">
-            <p style="margin:0 0 6px;font-size:13px;color:#64748b;">© 2025 AsistOK · Control de asistencia</p>
-            <p style="margin:0;font-size:12px;color:#94a3b8;">Hecho para comercios y equipos en Argentina</p>
-          </td>
-        </tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>
-  `).catch((e) => console.error('[mail]', e.message));
+  sendMail(to, 'Confirmá tu email · Asist OK',
+    `<p>Hola ${esc(user.name)},</p><p>Para confirmar tu email entrá a este link (vale 24 horas):</p><p><a href="${link}">${link}</a></p><p>Si no creaste una cuenta en Asist OK, ignorá este mensaje.</p>`)
+    .catch((e) => console.error('[mail]', e.message));
 }
 
 // ---- H5: límites de login solo por FALLOS; cada IP se bloquea a sí misma, nadie puede dejar afuera a otra persona ----
-const LOGIN_PAIR = { free: 4, windowMs: 15 * 60e3, baseLockMs: 60e3, maxLockMs: 15 * 60e3 };
-const LOGIN_IP = { free: 25, windowMs: 15 * 60e3, baseLockMs: 5 * 60e3, maxLockMs: 30 * 60e3 };
+const LOGIN_PAIR = { free: 4, windowMs: 15 * 60e3, baseLockMs: 60e3, maxLockMs: 15 * 60e3 };   // email + IP: 4 fallos libres, después 1, 2, 4… min (tope 15)
+const LOGIN_IP = { free: 25, windowMs: 15 * 60e3, baseLockMs: 5 * 60e3, maxLockMs: 30 * 60e3 }; // IP: 25 fallos (cualquier email) y bloqueo de 5 a 30 min
 
 const setSession = (ctx, userId) => {
   const token = sec.createSession(userId);
   ctx.setCookie(cookie('sid', token, { maxAge: cfg.SESSION_DAYS * 86400 }));
 };
 
-const heroPublic = () => {
-  const h = getSetting('hero', dom.DEFAULTS.hero);
-  return { ...h, slides: (h.slides || []).map((s) => ({ id: s.id })) };
-};
-
+const heroPublic = () => { const h = getSetting('hero', dom.DEFAULTS.hero); return { ...h, slides: (h.slides || []).map((s) => ({ id: s.id })) }; };
 route('GET', '/api/public/hero/:id', (ctx) => {
   const sl = (getSetting('hero', dom.DEFAULTS.hero).slides || []).find((x) => x.id === ctx.params.id);
   const file = sl && path.join(cfg.DATA_DIR, 'uploads', 'site', sl.file);
   if (!sl || !fs.existsSync(file)) throw notFound('Imagen no encontrada');
   return { __file: { buf: fs.readFileSync(file), filename: sl.file, mime: sl.mime, inline: true, cache: 'public, max-age=86400' } };
 });
-
 route('GET', '/api/public/reviews', (ctx) => {
   const rows = all(`SELECT r.stars, r.text, r.author_name, t.id as tid, t.name as business, t.logo_path
     FROM reviews r JOIN tenants t ON t.id = r.tenant_id
@@ -101,7 +50,7 @@ route('GET', '/api/public/reviews', (ctx) => {
     logo_url: r.logo_path ? '/api/public/tenant-logo/' + r.tid : null,
   })) };
 });
-
+// logo público solo para reviews aprobadas (por tenant id folder)
 route('GET', '/api/public/tenant-logo/:tid', (ctx) => {
   const tid = String(ctx.params.tid || '').replace(/\D/g, '');
   if (!tid) throw notFound();
@@ -116,7 +65,40 @@ route('GET', '/api/public/tenant-logo/:tid', (ctx) => {
   return { __file: { buf: fs.readFileSync(file), filename: 'logo' + ext, mime, inline: true, cache: 'public, max-age=300' } };
 });
 
+
+
+async function verifyTurnstile(token, ip) {
+  if (!cfg.TURNSTILE_ENABLED) return;
+  if (!token) throw bad('Completá la verificación de seguridad (CAPTCHA)');
+  const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ secret: cfg.TURNSTILE_SECRET_KEY, response: String(token), remoteip: ip || '' }),
+    signal: AbortSignal.timeout(10000),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!data.success) throw bad('La verificación de seguridad falló. Recargá e intentá de nuevo.');
+}
+route('GET', '/api/health', () => {
+  const cfg = require('../lib/config');
+  const { get } = require('../lib/db');
+  let dbOk = false;
+  try { get('SELECT 1 AS n'); dbOk = true; } catch {}
+  const last = require('../lib/db').getSetting('last_backup', null);
+  return {
+    ok: dbOk,
+    service: 'AsistOK',
+    time: new Date().toISOString(),
+    db: dbOk ? 'up' : 'down',
+    backup: last ? { at: last.at, ok: last.ok !== false } : null,
+    mail: cfg.MAIL_CONFIGURED,
+    mp: !!(cfg.MP_ACCESS_TOKEN),
+    turnstile: cfg.TURNSTILE_ENABLED,
+  };
+});
+
 route('GET', '/api/public/config', () => ({
+  turnstile_site_key: require('../lib/config').TURNSTILE_SITE_KEY || null,
   prices: dom.getPrices(),
   free_employees: getSetting('free_employees', 40),
   hero: heroPublic(),
@@ -140,6 +122,7 @@ route('GET', '/api/public/tenant/:slug', (ctx) => {
 
 route('POST', '/api/auth/register', async (ctx) => {
   rateLimit('reg:' + ctx.ip, 8, 3600e3);
+  await verifyTurnstile(ctx.body.turnstile_token, ctx.ip);
   if (!ctx.body.accept_terms) throw bad('Tenés que aceptar los Términos y condiciones para registrarte');
   if (!ctx.body.accept_privacy) throw bad('Tenés que aceptar la Política de privacidad para registrarte');
   const business = clean(ctx.body.business, 80);
@@ -166,6 +149,7 @@ route('POST', '/api/auth/register', async (ctx) => {
 });
 
 route('POST', '/api/auth/login', async (ctx) => {
+  await verifyTurnstile(ctx.body.turnstile_token, ctx.ip);
   const email = clean(ctx.body.email).toLowerCase();
   const pw = String(ctx.body.password || '');
   const ipKey = 'lf-ip:' + ctx.ip, pairKey = 'lf:' + email.slice(0, 200) + '|' + ctx.ip;
@@ -179,7 +163,7 @@ route('POST', '/api/auth/login', async (ctx) => {
   failClear(pairKey);
   if (u.status === 'pending') {
     let extra = '';
-    if (cfg.REQUIRE_EMAIL_VERIFICATION && !u.email_verified_at) {
+    if (cfg.REQUIRE_EMAIL_VERIFICATION && !u.email_verified_at) { // pudo vencer el link: se reenvía (máx. 3 por hora)
       try { rateLimit('resendv:' + u.id, 3, 3600e3); issueVerification(u); extra = ' Te reenviamos el email para confirmar tu dirección.'; } catch { /* límite de reenvíos */ }
     }
     throw new HttpError(403, 'AUTH_PENDING', 'Tu cuenta todavía está pendiente. Avisale a tu empleador que te autorice desde su panel (Empleados → Pendientes) y volvé a ingresar.' + extra);
@@ -216,6 +200,7 @@ route('POST', '/api/auth/password', { auth: 'user', anyStatus: true }, async (ct
   const plainEmail = fc.decryptEmail(ctx.user.email) || ctx.user.email;
   const err = sec.passwordProblem(password, plainEmail);
   if (err) throw bad(err);
+  // Primer ingreso (contraseña temporal del empleador): exigir Términos + Privacidad
   let legalSql = '';
   const legalParams = [];
   if (ctx.user.must_change_pw) {
@@ -242,55 +227,10 @@ route('POST', '/api/auth/forgot', async (ctx) => {
     run('INSERT INTO resets(token_hash,user_id,expires_at) VALUES(?,?,?)', sec.sha(token), u.id, Date.now() + 3600e3);
     const link = `${cfg.APP_URL}/?reset=${token}`;
     const to = fc.decryptEmail(u.email) || u.email;
-    sendMail(to, 'Recuperá tu contraseña · AsistOK', `
-<!DOCTYPE html>
-<html lang="es">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background-color:#f0fdfa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0fdfa;padding:40px 16px;">
-    <tr><td align="center">
-      <table width="100%" style="max-width:520px;background-color:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(15,118,110,0.08);">
-        <tr>
-          <td style="background:linear-gradient(135deg,#0f766e 0%,#14b8a6 100%);padding:32px 40px;text-align:center;">
-            <span style="color:#ffffff;font-size:22px;font-weight:700;">⏱ AsistOK</span>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:40px 40px 32px;">
-            <h1 style="margin:0 0 12px;font-size:24px;font-weight:700;color:#0f172a;line-height:1.3;">Restablecé tu contraseña</h1>
-            <p style="margin:0 0 28px;font-size:15px;color:#64748b;line-height:1.6;">
-              Hola ${esc(u.name)}, recibimos una solicitud para restablecer la contraseña de tu cuenta en <strong style="color:#0f766e;">AsistOK</strong>.
-            </p>
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
-              <tr><td align="center">
-                <a href="${link}" style="display:inline-block;background-color:#0f766e;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(15,118,110,0.35);">
-                  Restablecer contraseña
-                </a>
-              </td></tr>
-            </table>
-            <p style="margin:0 0 8px;font-size:14px;color:#64748b;line-height:1.5;">Este enlace es válido por <strong>60 minutos</strong>.</p>
-            <p style="margin:0 0 24px;font-size:14px;color:#64748b;line-height:1.5;">Si no solicitaste este cambio, podés ignorar este correo. Tu cuenta seguirá segura.</p>
-            <div style="height:1px;background-color:#e2e8f0;margin:28px 0;"></div>
-            <p style="margin:0;font-size:13px;color:#94a3b8;line-height:1.5;">
-              Si el botón no funciona, copiá y pegá este enlace:<br>
-              <a href="${link}" style="color:#0f766e;word-break:break-all;">${link}</a>
-            </p>
-          </td>
-        </tr>
-        <tr>
-          <td style="background-color:#f8fafc;padding:24px 40px;text-align:center;border-top:1px solid #e2e8f0;">
-            <p style="margin:0 0 6px;font-size:13px;color:#64748b;">© 2025 AsistOK · Control de asistencia</p>
-            <p style="margin:0;font-size:12px;color:#94a3b8;">Hecho para comercios y equipos en Argentina</p>
-          </td>
-        </tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>
-`);
+    sendMail(to, 'Recuperá tu contraseña · AsistOK',
+      `<p>Hola ${esc(u.name)},</p><p>Para elegir una nueva contraseña entrá a este link (vale 1 hora):</p><p><a href="${link}">${link}</a></p><p>Si no lo pediste vos, ignorá este mensaje.</p>`);
   }
-  return { ok: true };
+  return { ok: true }; // misma respuesta exista o no el email
 });
 
 route('POST', '/api/auth/reset', async (ctx) => {
@@ -301,6 +241,7 @@ route('POST', '/api/auth/reset', async (ctx) => {
   if (!u) throw bad('El link venció. Pedí uno nuevo.', 'RESET_EXPIRED');
   const err = sec.passwordProblem(ctx.body.password, u.email);
   if (err) throw bad(err);
+  // recibir este link en el email prueba que la persona controla esa dirección: queda verificado
   run('UPDATE users SET pass_hash=?, must_change_pw=0, email_verified_at=COALESCE(email_verified_at,?) WHERE id=?', await sec.hashPassword(ctx.body.password), Date.now(), u.id);
   run('DELETE FROM resets WHERE user_id=?', u.id);
   sec.destroyUserSessions(u.id);
@@ -308,6 +249,7 @@ route('POST', '/api/auth/reset', async (ctx) => {
   return { ok: true };
 });
 
+// Alta de empleado por link/QR: queda pendiente hasta que el dueño lo autorice
 route('POST', '/api/public/join/:slug', async (ctx) => {
   rateLimit('join:' + ctx.ip, 10, 3600e3);
   const t = get("SELECT * FROM tenants WHERE slug=? AND status='active'", ctx.params.slug);
@@ -332,6 +274,7 @@ route('POST', '/api/public/join/:slug', async (ctx) => {
   return { ok: true, email_verification: cfg.REQUIRE_EMAIL_VERIFICATION };
 });
 
+// H2: confirmar el email con el link recibido (token de un solo uso)
 route('POST', '/api/auth/verify-email', (ctx) => {
   rateLimit('verify:' + ctx.ip, 20, 3600e3);
   const r = get('SELECT * FROM email_verifications WHERE token_hash=?', sec.sha(String(ctx.body.token || '')));

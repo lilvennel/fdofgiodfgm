@@ -2,15 +2,29 @@ import { S, acts, forms, html, raw, $, get, post, patch, api, render, patchEl, t
 import { qrSvg } from './qr.js';
 import { startCheckout } from './app.js';
 
-const O = { tab: 'inicio', period: null, qrBranch: null, qrTimer: null, emps: [], branches: [], newsOpen: false };
-try { O.newsOpen = localStorage.getItem('ap-news-open') === '1'; } catch { /* ignore */ }
-const TABS = [['inicio', 'Inicio'], ['notif', 'Notif.'], ['solicitudes', 'Solicitudes'], ['empleados', 'Empleados'], ['qr', 'Local'], ['sucursales', 'Sucursales'], ['reportes', 'Reportes'], ['config', 'Config']];
+const O = { tab: 'inicio', showNews: false, period: null, qrBranch: null, qrTimer: null, emps: [], branches: [] };
+const TABS_OWNER = [['inicio', 'Inicio'], ['notif', 'Notif.'], ['solicitudes', 'Solicitudes'], ['empleados', 'Empleados'], ['qr', 'Local'], ['sucursales', 'Sucursales'], ['reportes', 'Reportes'], ['config', 'Config']];
+const TABS_MANAGER = [['inicio', 'Inicio'], ['notif', 'Notif.'], ['solicitudes', 'Permisos'], ['empleados', 'Mi equipo'], ['reportes', 'Reportes']];
+const TABS_HR = [['inicio', 'Inicio'], ['notif', 'Notif.'], ['solicitudes', 'Solicitudes'], ['empleados', 'Empleados'], ['reportes', 'Reportes']];
+const tabsFor = () => {
+  const r = S.me?.user?.role;
+  if (r === 'manager') return TABS_MANAGER;
+  if (r === 'hr') return TABS_HR;
+  return TABS_OWNER;
+};
+const isManager = () => S.me?.user?.role === 'manager';
+const isHr = () => S.me?.user?.role === 'hr';
+const isStaffOnly = () => isManager() || isHr(); // no dueño
+
 const SWATCHES = ['#0f766e', '#16a34a', '#2563eb', '#7c3aed', '#db2777', '#ea580c'];
 const loading = html`<p class="muted" style="padding:24px;text-align:center"><span class="spinner"></span></p>`;
 
 export async function renderOwner() {
   const { tenant, notice } = S.me;
-  try { O.ob = await get('/api/owner/onboarding'); } catch { O.ob = null; }
+  const allowed = tabsFor().map(([k]) => k);
+  if (!allowed.includes(O.tab)) O.tab = 'inicio';
+  if (isStaffOnly()) O.ob = null;
+  else { try { O.ob = await get('/api/owner/onboarding'); } catch { O.ob = null; } }
   const ob = O.ob;
   render(html`
   <header class="topbar topbar-pro"><div class="brand">${tenant.logo_url
@@ -21,28 +35,54 @@ export async function renderOwner() {
     <button class="btn btn-sm btn-outline" data-act="logout" type="button">Cerrar sesión</button></header>
   <main class="dash-body">
     ${S.cfg.email_verification && !S.me.user.email_verified ? html`<div class="alert alert-warn row between"><span>✉️ Confirmá tu email: te enviamos un link a ${S.me.user.email}.</span><button class="link" type="button" data-act="resend-verify">Reenviar email</button></div>` : ''}
-    ${notice ? html`<div class="alert alert-warn">📈 ${notice}</div>` : ''}
-    ${ob && ob.dismissed && !ob.all_done ? html`<div class="alert alert-warn row between"><span>🧭 Te faltan ${ob.total - ob.completed} paso(s) para dejar todo listo.</span><button class="link" type="button" data-act="ob-reopen">Ver checklist</button></div>` : ''}
-    <div class="tabs" role="tablist">${TABS.map(([k, l]) => html`<button class="tab ${O.tab === k ? 'active' : ''}" data-act="o-tab" data-tab="${k}" type="button">${l}${k === 'notif' ? html` <span id="notif-count" class="pending-badge hidden"></span>` : ''}</button>`)}</div>
+    ${isManager() ? html`<div class="alert alert-info" style="background:#ecfeff;border-color:#a5f3fc;color:#155e75">👤 <strong>Modo encargado</strong> · Ves solo tu sucursal: equipo, tardanzas, marcas y permisos. No gestionás pagos ni la configuración general.</div>` : ''}
+    ${isHr() ? html`<div class="alert alert-info" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534">👥 <strong>Modo RRHH</strong> · Ves asistencia, tardanzas y permisos de todo el negocio. No gestionás pagos ni la configuración general.</div>` : ''}
+    ${!isStaffOnly() && notice ? html`<div class="alert alert-warn">📈 ${notice}</div>` : ''}
+    ${!isStaffOnly() && ob && ob.dismissed && !ob.all_done ? html`<div class="alert alert-warn row between"><span>🧭 Te faltan ${ob.total - ob.completed} paso(s) para dejar todo listo.</span><button class="link" type="button" data-act="ob-reopen">Ver checklist</button></div>` : ''}
+    <div class="tabs" role="tablist">${tabsFor().map(([k, l]) => html`<button class="tab ${O.tab === k ? 'active' : ''}" data-act="o-tab" data-tab="${k}" type="button">${l}${k === 'notif' ? html` <span id="notif-count" class="pending-badge hidden"></span>` : ''}</button>`)}</div>
     <div id="tab-body">${loading}</div>
   </main>`);
   loadTab();
 }
-acts['o-tab'] = (el) => { O.tab = el.dataset.tab; renderOwner(); };
-acts['news-toggle'] = () => {
-  O.newsOpen = !O.newsOpen;
-  try { localStorage.setItem('ap-news-open', O.newsOpen ? '1' : '0'); } catch { /* ignore */ }
-  // Solo actualizamos la card de novedades sin recargar toda la pestaña
-  const body = document.querySelector('.news-body');
-  const btn = document.querySelector('[data-act="news-toggle"]');
-  if (body) body.classList.toggle('hidden', !O.newsOpen);
-  if (btn) { btn.textContent = O.newsOpen ? 'Ocultar ▲' : 'Ver ▼'; btn.setAttribute('aria-expanded', O.newsOpen ? 'true' : 'false'); }
+acts['o-tab'] = (el) => {
+  const allowed = tabsFor().map(([k]) => k);
+  O.tab = allowed.includes(el.dataset.tab) ? el.dataset.tab : 'inicio';
+  renderOwner();
 };
+
+
+function newsBlock(news) {
+  const entries = news?.entries || [];
+  if (!entries.length) {
+    return html`<div class="card"><strong>📣 Novedades</strong><p class="muted">Todavía no hay novedades.</p></div>`;
+  }
+  const open = !!O.showNews;
+  const list = open ? entries : entries.slice(0, 1);
+  return html`<div class="card">
+    <div class="row between">
+      <strong>📣 Novedades</strong>
+      <button class="btn btn-outline btn-sm" type="button" data-act="news-toggle">${open ? 'Ocultar' : 'Ver todas (' + entries.length + ')'}</button>
+    </div>
+    ${list.map((n) => html`<div class="news-item">
+      <div class="row between"><strong>Versión ${n.version}</strong><span class="muted">${fmtDay(n.date)}</span></div>
+      ${open ? [['added', '➕ Agregado'], ['changed', '🔧 Cambiado'], ['removed', '➖ Quitado']].filter(([k]) => n[k]).map(([k, l]) => html`<div class="muted" style="margin-top:4px">${l}</div><ul>${n[k].split('\n').filter(Boolean).map((li) => html`<li>${li}</li>`)}</ul>`) : html`<p class="muted" style="font-size:.8rem;margin:4px 0 0">Tocá “Ver todas” para el detalle.</p>`}
+    </div>`)}
+    ${!open && entries.length > 1 ? html`<p class="muted" style="font-size:.8rem;margin-top:6px">+ ${entries.length - 1} versión(es) anterior(es)</p>` : ''}
+  </div>`;
+}
 
 async function loadTab() {
   clearInterval(O.qrTimer);
-  try { await ({ inicio: tabInicio, notif: tabNotif, solicitudes: tabSolicitudes, empleados: tabEmpleados, qr: tabQr, sucursales: tabSucursales, reportes: tabReportes, config: tabConfig })[O.tab](); }
-  catch (e) { const { fail } = await import('./app.js'); fail(e); }
+  const tabs = { inicio: tabInicio, notif: tabNotif, solicitudes: tabSolicitudes, empleados: tabEmpleados, qr: tabQr, sucursales: tabSucursales, reportes: tabReportes, config: tabConfig };
+  const fn = tabs[O.tab] || tabInicio;
+  try {
+    await fn();
+  } catch (e) {
+    const body = document.querySelector('#tab-body');
+    if (body) body.innerHTML = '<p class="muted" style="padding:24px;text-align:center">No se pudo cargar. Tocá otra pestaña o recargá.</p>';
+    const { fail } = await import('./app.js');
+    fail(e);
+  }
 }
 const setBadge = (n) => { const b = $('#notif-count'); if (b) { b.textContent = n; b.classList.toggle('hidden', !n); } };
 
@@ -83,7 +123,7 @@ async function tabInicio() {
     <div>
       <div class="muted" style="font-size:.8rem;font-weight:600">Panel en vivo · ${periodLabel(O.period)}</div>
       <div class="dash-hero-title">${t0.working_now} en jornada ahora</div>
-      <div class="muted">${d.employees.length} empleado${d.employees.length === 1 ? '' : 's'} activos</div>
+      <div class="muted">${d.is_manager && d.manager_branch ? d.manager_branch.name + ' · ' : ''}${d.employees.length} en tu equipo</div>
     </div>
     <div class="form-group" style="margin:0;min-width:140px">
       <label for="per" class="muted" style="font-size:.75rem">Período</label>
@@ -119,11 +159,23 @@ async function tabInicio() {
   </div>` : ''}
   ${d.pending.length ? html`<div class="card"><strong>Solicitudes de alta</strong>${d.pending.map((p) => html`<div class="hours-emp-row"><div><div style="font-weight:600">${p.name}</div><div class="muted">${p.email}</div></div>
     <div class="row"><button class="btn btn-primary btn-sm" data-act="emp-ok" data-id="${p.id}" type="button">Aprobar</button><button class="btn btn-outline btn-sm" data-act="emp-no" data-id="${p.id}" type="button">Rechazar</button></div></div>`)}</div>` : ''}
-  <div class="card"><div class="row between mb"><strong>Equipo ahora</strong><span class="muted">${d.employees.length} personas</span></div>
+  <div class="card"><div class="row between mb"><strong>${d.is_manager ? 'Mi equipo ahora' : 'Equipo ahora'}</strong><span class="muted">${d.employees.length} persona${d.employees.length === 1 ? '' : 's'}${d.manager_branch ? ' · ' + d.manager_branch.name : ''}</span></div>
   <div class="emp-grid-live">${d.employees.map((e) => html`<div class="live-card" data-act="emp-detail" data-id="${e.id}"><div class="emp-av" style="margin:0 auto 8px">${e.name.slice(0, 1)}</div>
     <div style="font-weight:600;font-size:.85rem">${e.name.split(' ')[0]}</div>
     <div class="status-live ${e.state === 'jornada' ? 'jornada' : e.state === 'extra' ? 'extra' : 'fuera'}">${e.state === 'jornada' ? 'En jornada' : e.state === 'extra' ? 'Extra' : 'Fuera'}</div>
-    ${e.since ? html`<div class="muted" style="font-size:.72rem">${fmtTime(e.since)}</div>` : ''}</div>`)}</div></div>
+    ${e.since ? html`<div class="muted" style="font-size:.72rem">Desde ${fmtTime(e.since)}</div>` : e.last_mark_at ? html`<div class="muted" style="font-size:.72rem">Última marca ${fmtTime(e.last_mark_at)}</div>` : html`<div class="muted" style="font-size:.72rem">Sin marcas hoy</div>`}
+    ${e.late_count ? html`<div style="font-size:.7rem;font-weight:700;color:#d97706;margin-top:4px">${e.late_count} tardanza${e.late_count === 1 ? '' : 's'}</div>` : ''}</div>`)}</div></div>
+  ${d.rrhh ? html`<div class="card"><strong>📊 RRHH del período</strong>
+    <div class="stats-row" style="margin-top:10px">
+      <div class="stat"><div class="stat-l">Tardanzas</div><div class="stat-v" style="color:#d97706">${d.rrhh.late_total}</div></div>
+      <div class="stat"><div class="stat-l">Ausencias sin marca</div><div class="stat-v" style="color:#dc2626">${d.rrhh.absent_total}</div></div>
+      <div class="stat"><div class="stat-l">Equipo activo</div><div class="stat-v">${d.rrhh.employees}</div></div>
+    </div>
+    ${d.rrhh.top_late?.length ? html`<div style="margin-top:12px;font-size:.85rem"><strong>Más tardanzas</strong>${d.rrhh.top_late.map((x) => html`<div class="row between" style="padding:4px 0"><span>${x.name}</span><span class="muted">${x.late} vez${x.late === 1 ? '' : 'es'}</span></div>`)}</div>` : ''}
+    ${d.rrhh.top_absent?.length ? html`<div style="margin-top:10px;font-size:.85rem"><strong>Sin marcar entrada</strong>${d.rrhh.top_absent.map((x) => html`<div class="row between" style="padding:4px 0"><span>${x.name}</span><span class="muted">${x.absent} día${x.absent === 1 ? '' : 's'}</span></div>`)}</div>` : ''}
+    ${d.rrhh.low_attendance?.length ? html`<div style="margin-top:10px;font-size:.85rem"><strong>Menor % de horas</strong>${d.rrhh.low_attendance.map((x) => html`<div class="row between" style="padding:4px 0"><span>${x.name}</span><span class="muted">${x.pct}%</span></div>`)}</div>` : ''}
+    ${!d.rrhh.top_late?.length && !d.rrhh.top_absent?.length ? html`<p class="muted mt" style="font-size:.85rem">Sin tardanzas ni ausencias registradas en este período.</p>` : ''}
+  </div>` : ''}
   ${hols.length ? html`<div class="card"><strong>Feriados del mes</strong><div class="muted mt">${hols.map((h) => h.date.slice(8) + '/' + h.date.slice(5, 7) + ' ' + h.name).join(' · ')}</div></div>` : ''}
   `);
 }
@@ -133,7 +185,7 @@ const pendingRow = (p) => html`<div class="emp-row" style="cursor:default"><div 
   <button class="btn btn-primary btn-sm" data-act="emp-approve" data-id="${p.id}" type="button">Autorizar</button><button class="btn btn-danger btn-sm" data-act="emp-reject" data-id="${p.id}" type="button">Rechazar</button></div>`;
 
 // ---------- Notificaciones ----------
-const DOT = { late: 'late', no_exit: 'out', geo_out: 'zona', permit: 'perm', auth: 'perm', emp_request: 'perm' };
+const DOT = { late: 'late', no_exit: 'out', geo_out: 'zona', absent: 'out', permit: 'perm', auth: 'perm', emp_request: 'perm' };
 const SEC = { geo_out: 'Intento fuera de zona', qr_invalid: 'QR inválido o vencido', geo_missing: 'Intentó marcar sin ubicación', display_geo_out: 'Pantalla del QR fuera del local', display_reuse: 'Link de pantalla usado en otro dispositivo', display_gps: 'Pantalla del QR sin GPS' };
 async function tabNotif() {
   const [n, sec] = await Promise.all([get('/api/owner/notifs' + (O.showHist ? '?history=1' : '')), get('/api/owner/security')]);
@@ -176,7 +228,11 @@ acts['notif-clear'] = async () => {
 };
 acts['permit-decide'] = async (el) => { await post(`/api/owner/permits/${el.dataset.id}/decide`, { approve: el.dataset.ok === '1' }); toast(el.dataset.ok === '1' ? 'Aprobado' : 'Rechazado'); loadTab(); };
 acts['notif-seen'] = async (el) => { await post(`/api/owner/notifs/${el.dataset.id}/resolve`); loadTab(); };
-const afterEmpChange = async () => { await refreshMe(); loadTab(); };
+const afterEmpChange = async () => {
+  O.emps = []; // forzar lista fresca (rol actualizado)
+  try { await refreshMe(); } catch {}
+  await loadTab();
+};
 acts['emp-approve'] = async (el) => { await post(`/api/owner/employees/${el.dataset.id}/approve`); toast('Empleado autorizado'); afterEmpChange(); };
 acts['emp-reject'] = async (el) => { await post(`/api/owner/employees/${el.dataset.id}/reject`); toast('Solicitud rechazada'); afterEmpChange(); };
 async function refreshMe() { S.me = await get('/api/auth/me'); applyTheme(); }
@@ -274,11 +330,11 @@ async function tabEmpleados() {
       <button class="btn btn-primary btn-sm" data-act="emp-add" type="button">+ Agregar</button></div>
     <div class="emp-bar"><div class="emp-bar-fill" style="width:${pct}%"></div></div>
     <div class="row mb"><button class="btn btn-outline btn-sm" data-act="alta-qr" type="button">QR de alta</button>
-      <button class="btn btn-outline btn-sm" data-act="csv-open" type="button">Importar CSV</button>
+      ${!isStaffOnly() ? html`<button class="btn btn-outline btn-sm" data-act="csv-open" type="button">Importar CSV</button>` : ''}
       <button class="btn btn-outline btn-sm" data-act="copy" data-text="${link}" type="button">Copiar link de registro</button></div>
     ${pend.length ? html`<div class="card" style="background:var(--bg)"><strong>Pendientes de autorización</strong><p class="muted mb">Se registraron con el link/QR y esperan tu OK.</p>${pend.map(pendingRow)}</div>` : ''}
     ${employees.filter((e) => e.status !== 'pending' && e.status !== 'rejected').map((e) => html`<div class="emp-row" data-act="emp-detail" data-id="${e.id}"><div class="emp-av">${initials(e.name)}</div>
-      <div class="grow"><div style="font-weight:600;font-size:.88rem">${e.name}</div><div class="muted">${e.cargo || 'Sin cargo'} · ${(branches.find((b) => b.id === e.branch_id) || {}).name || ''}</div></div>
+      <div class="grow"><div style="font-weight:600;font-size:.88rem">${e.name}${e.role === 'manager' ? html` <span class="pill" style="font-size:.65rem">Encargado</span>` : e.role === 'hr' ? html` <span class="pill" style="font-size:.65rem;background:#dcfce7;color:#166534">RRHH</span>` : ''}</div><div class="muted">${e.cargo || 'Sin cargo'} · ${(branches.find((b) => b.id === e.branch_id) || {}).name || ''}</div></div>
       ${e.status === 'active' ? badge(e.state) : badge(e.status)}</div>`)}
     ${employees.length ? '' : html`<p class="muted">Todavía no cargaste empleados.</p>`}</div>`);
 }
@@ -333,11 +389,22 @@ acts['emp-detail'] = async (el) => {
     <button class="btn btn-primary btn-block" type="submit">Guardar</button></form>
   <div class="row mt"><button class="btn btn-primary btn-sm" data-act="mm-open" data-id="${id}" type="button">🕘 Marcas / corregir</button><button class="btn btn-outline btn-sm" data-act="emp-reset" data-id="${id}" type="button">Restablecer contraseña</button>
     ${e.status === 'active' ? html`<button class="btn btn-danger btn-sm" data-act="emp-disable" data-id="${id}" type="button">Deshabilitar</button>` : html`<button class="btn btn-primary btn-sm" data-act="emp-enable" data-id="${id}" type="button">Habilitar</button>
-    <button class="btn btn-danger btn-sm" data-act="emp-delete" data-id="${id}" type="button">Eliminar</button>`}</div>
+    <button class="btn btn-danger btn-sm" data-act="emp-delete" data-id="${id}" type="button">Eliminar</button>`}
+    ${S.me.user.role === 'owner' && e.status === 'active' ? html`
+    <div class="card" style="margin-top:10px;padding:12px">
+      <strong style="font-size:.9rem">Rol en el sistema</strong>
+      <p class="muted" style="font-size:.8rem;margin:4px 0 8px">Ahora: <strong>${e.role === 'manager' ? 'Encargado de sucursal' : e.role === 'hr' ? 'RRHH' : 'Empleado'}</strong></p>
+      <div class="row" style="flex-wrap:wrap;gap:6px">
+        <button class="btn ${e.role === 'employee' || !e.role ? 'btn-primary' : 'btn-outline'} btn-sm" data-act="emp-role" data-id="${id}" data-role="employee" type="button">Empleado</button>
+        <button class="btn ${e.role === 'manager' ? 'btn-primary' : 'btn-outline'} btn-sm" data-act="emp-role" data-id="${id}" data-role="manager" type="button">Encargado</button>
+        <button class="btn ${e.role === 'hr' ? 'btn-primary' : 'btn-outline'} btn-sm" data-act="emp-role" data-id="${id}" data-role="hr" type="button">RRHH</button>
+      </div>
+      <p class="muted" style="font-size:.75rem;margin-top:8px">Encargado = solo su sucursal. RRHH = ve todo el negocio (sin pagos ni config).</p>
+    </div>` : ''}</div>
   <div style="font-weight:700;font-size:.85rem;margin:14px 0 6px">Datos personales (Ley 25.326)</div>
   <p class="muted" style="font-size:.82rem;margin-bottom:8px">Exportá el paquete completo del empleado (para entregárselo o responder a la AAIP) o eliminá todos sus datos personales a pedido del titular.</p>
   <div class="row"><a class="btn btn-outline btn-sm" href="/api/owner/employees/${id}/export">📥 Exportar datos</a>
-    <button class="btn btn-danger btn-sm" data-act="emp-erase" data-id="${id}" data-name="${e.name}" type="button">🗑️ Eliminar todos los datos</button></div>
+    ${!isStaffOnly() ? html`<button class="btn btn-danger btn-sm" data-act="emp-erase" data-id="${id}" data-name="${e.name}" type="button">🗑️ Eliminar todos los datos</button>` : ''}</div>
   <div style="font-weight:700;font-size:.85rem;margin:14px 0 6px">Documentos</div>
   ${docs.length ? docs.map((d) => html`<div class="cert-item"><span>📄</span><div class="grow"><div style="font-weight:600">${d.title}${d.period ? ' · ' + d.period : ''}</div><div class="muted">${fmtDateTime(d.created_at)}${d.sign_status ? ' · ' + d.sign_status : ''}${d.sign_note ? ' · “' + d.sign_note + '”' : ''}</div></div>
     <a class="btn btn-outline btn-sm" href="/api/docs/${d.id}/file" target="_blank" rel="noopener">Ver</a></div>`) : html`<p class="muted">Sin documentos.</p>`}
@@ -631,7 +698,7 @@ async function tabSucursales() {
 }
 
 // ---------- Reportes ----------
-const REP = { hours: 'Horas + extras', daily: 'Asistencia diaria', late: 'Tardanzas', auto: 'Salidas automáticas' };
+const REP = { hours: 'Horas + extras', daily: 'Asistencia diaria', late: 'Tardanzas', auto: 'Salidas automáticas', contable: 'Export contable' };
 const repState = { type: 'hours', period: null };
 async function tabReportes() {
   if (S.me.tenant.features && !S.me.tenant.features.reports) {
@@ -666,7 +733,7 @@ async function tabReportes() {
       <a class="btn btn-primary btn-sm" href="/api/owner/reports/export?${qs}&format=csv">📥 Excel / CSV</a>
       <a class="btn btn-outline btn-sm" href="/api/owner/reports/export?${qs}&format=json">JSON</a>
       <button class="btn btn-outline btn-sm" data-act="rep-print" type="button">🖨 PDF / Imprimir</button>
-      <a class="btn btn-outline btn-sm" href="/api/owner/export/all" title="JSON completo del negocio (empleados, marcas, permisos, docs)">📥 Exportar todos los datos</a>
+      ${!isStaffOnly() ? html`<a class="btn btn-outline btn-sm" href="/api/owner/export/all" title="JSON completo del negocio (empleados, marcas, permisos, docs)">📥 Exportar todos los datos</a>` : ''}
     </div>
     <div class="tbl-wrap">${tableHtml(r)}</div></div>`);
   O.lastReport = r;
@@ -700,6 +767,17 @@ async function tabConfig() {
   const t = S.me.tenant, p = S.me.prices;
   const sel = (name, opts, cur) => html`<select name="${name}" id="c-${name}">${opts.map(([v, l]) => html`<option value="${v}" ${String(v) === String(cur) ? raw('selected') : ''}>${l}</option>`)}</select>`;
   patchEl('#tab-body', html`<form data-form="settings">
+  ${S.me.user.role === 'owner' ? html`<div class="card"><strong>🏪 Plantilla por rubro</strong>
+    <p class="muted mb">Atajo para arrancar: aplica <strong>horario de entrada/salida, tolerancia de tardanza y radio GPS</strong> típicos del rubro. Después podés cambiar todo a mano en esta misma pestaña.</p>
+    <div class="row" style="flex-wrap:wrap;gap:8px">
+      <button type="button" class="btn btn-outline btn-sm" data-act="industry" data-k="comercio" title="9–18 · lun–sáb · tol. 10 min · 50 m">Comercio</button>
+      <button type="button" class="btn btn-outline btn-sm" data-act="industry" data-k="gastronomia" title="8–00 · lun–sáb · tol. 15 min · 40 m">Gastronomía</button>
+      <button type="button" class="btn btn-outline btn-sm" data-act="industry" data-k="taller" title="7–16 · lun–vie · tol. 10 min · 80 m">Taller</button>
+      <button type="button" class="btn btn-outline btn-sm" data-act="industry" data-k="oficina" title="9–18 · lun–vie · tol. 15 min">Oficina</button>
+      <button type="button" class="btn btn-outline btn-sm" data-act="industry" data-k="salud" title="8–14 · lun–vie · tol. 10 min · 40 m">Salud</button>
+    </div>
+    <p class="muted" style="font-size:.75rem;margin-top:8px">No cambia empleados ni ubicación del mapa: solo horarios y radio sugeridos.</p>
+  </div>` : ''}
   <div class="card"><strong>🕐 Horario del local (turno fijo)</strong>
     <p class="muted mb">No inicia la jornada sola: solo sirve para <strong>avisarte si alguien llega tarde</strong>. Si un empleado tiene “Entrada habitual” en su ficha, se usa esa hora en lugar de esta.</p>
     <div class="grid2">
@@ -774,14 +852,7 @@ async function tabConfig() {
     ${payments.length ? html`<div class="tbl-wrap mt"><table class="tbl"><thead><tr><th>Fecha</th><th>Concepto</th><th>Monto</th><th>Estado</th></tr></thead><tbody>${payments.map((x) => html`<tr><td>${fmtDateTime(x.created_at)}</td><td>${{ plan: 'Plan', extra: 'Extras ×' + x.qty, mod_suc: 'Multi-sucursal', mod_rec: 'Recibos' }[x.kind]}</td><td>${money(x.amount)}</td><td>${badge(x.status)}</td></tr>`)}</tbody></table></div>` : ''}
     <div class="row mt">${t.plan === 'sub' && !t.cancel_at ? html`<button class="btn btn-danger btn-sm" data-act="plan-cancel" type="button">Cancelar suscripción</button>` : ''}<button class="btn btn-outline btn-sm" data-act="change-pw" type="button">Cambiar mi contraseña</button></div></div>
   ${O.ob && (O.ob.dismissed || O.ob.all_done) ? html`<div class="card"><div class="row between"><div><strong>🧭 Primeros pasos</strong><div class="muted">${O.ob.completed} de ${O.ob.total} completados</div></div><button class="btn btn-outline btn-sm" data-act="ob-reopen" type="button">Ver checklist</button></div></div>` : ''}
-    <div class="card news-card">
-    <div class="row between" style="align-items:center;gap:8px">
-      <strong>📣 Novedades</strong>
-      <button class="btn btn-outline btn-sm" data-act="news-toggle" type="button" aria-expanded="${O.newsOpen ? 'true' : 'false'}">${O.newsOpen ? 'Ocultar ▲' : 'Ver ▼'}</button>
-    </div>
-    <div class="news-body ${O.newsOpen ? '' : 'hidden'}">${news.entries.length ? news.entries.map((n) => html`<div class="news-item"><div class="row between"><strong>Versión ${n.version}</strong><span class="muted">${fmtDay(n.date)}</span></div>
-    ${[['added', '➕ Agregado'], ['changed', '🔧 Cambiado'], ['removed', '➖ Quitado']].filter(([k]) => n[k]).map(([k, l]) => html`<div class="muted" style="margin-top:4px">${l}</div><ul>${n[k].split('\n').filter(Boolean).map((li) => html`<li>${li}</li>`)}</ul>`)}</div>`) : html`<p class="muted">Todavía no hay novedades.</p>`}</div>
-  </div>
+  ${newsBlock(news)}
   <div class="card"><strong>⭐ Valorá AsistOK</strong>
     <p class="muted mb">Tu opinión puede salir en la página de inicio (con el logo de tu negocio si lo cargaste). La revisamos antes de publicarla.</p>
     <form data-form="review">
@@ -822,6 +893,7 @@ forms.settings = async (v, f) => {
   loadTab();
 };
 
+acts['news-toggle'] = () => { O.showNews = !O.showNews; loadTab(); };
 acts['plan-cancel'] = async () => {
   if (!confirm('¿Cancelar la suscripción?\n\nTu cuenta seguirá activa hasta el final del período ya pagado. Después pasará a inactiva. Los datos no se borran.')) return;
   const r = await post('/api/owner/plan/cancel'); // si Mercado Pago no confirma la baja, falla con un mensaje y NO se marca como cancelada
@@ -871,6 +943,12 @@ acts['sign-del'] = async () => {
   toast('Firma quitada');
   loadTab();
 };
+acts['industry'] = async (el) => {
+  if (!confirm('¿Aplicar la plantilla «' + el.dataset.k + '»? Se actualizan horarios, tolerancia y radio de las sucursales.')) return;
+  await post('/api/owner/industry-template', { template: el.dataset.k });
+  toast('Plantilla aplicada');
+  loadTab();
+};
 forms['settings-theme'] = async (v) => {
   const theme = v.theme || S.me?.tenant?.theme;
   if (!theme) return toast('Elegí un color');
@@ -881,6 +959,25 @@ forms['settings-theme'] = async (v) => {
   toast('Tema guardado');
 };
 
+acts['emp-role'] = async (el) => {
+  const role = el.dataset.role;
+  const msgs = {
+    manager: '¿Convertir en encargado de su sucursal? Verá solo su local (equipo, tardanzas, permisos). Sin pagos ni config.\n\nSe cerrará su sesión actual para que vuelva a ingresar.',
+    hr: '¿Convertir en RRHH? Verá asistencia de todo el negocio. Sin pagos ni configuración general.\n\nSe cerrará su sesión actual.',
+    employee: '¿Volver a empleado normal? Solo marcará asistencia desde su panel.\n\nSe cerrará su sesión de encargado/RRHH si estaba abierta.',
+  };
+  if (!confirm(msgs[role] || msgs.employee)) return;
+  const id = el.dataset.id;
+  try {
+    await post('/api/owner/employees/' + id + '/role', { role });
+    toast(role === 'manager' ? 'Ahora es encargado · debe volver a ingresar' : role === 'hr' ? 'Ahora es RRHH · debe volver a ingresar' : 'Volvió a empleado · debe volver a ingresar');
+  } catch (err) {
+    toast(err.message || 'No se pudo cambiar el rol');
+    return;
+  }
+  closeModal();
+  await afterEmpChange();
+};
 acts['emp-delete'] = async (el) => {
   if (!confirm('¿Eliminar este empleado de forma permanente?\n\nSe borran su usuario y sesiones. Las marcas históricas pueden quedar sin nombre.')) return;
   try {

@@ -90,7 +90,7 @@ route('GET', '/api/admin/tenants/:id/export', S, (ctx) => {
     purpose: 'Exportación administrativa (Ley 25.326 / AAIP / orden judicial)',
     tenant: { id: t.id, name: t.name, slug: t.slug, plan: t.plan, status: t.status, created_at: t.created_at, paid_until: t.paid_until },
     owners,
-    branches: all('SELECT id,name,lat,lng,radius,address FROM branches WHERE tenant_id=?', t.id),
+    branches: all('SELECT id,name,lat,lng,radius,address,created_at FROM branches WHERE tenant_id=?', t.id),
     employees: emps,
     marks: all('SELECT id,user_id,branch_id,kind,ts,lat,lng,accuracy,dist,auto,source,note FROM marks WHERE tenant_id=? ORDER BY ts', t.id),
     permits: all('SELECT * FROM permits WHERE tenant_id=?', t.id),

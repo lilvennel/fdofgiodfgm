@@ -9,14 +9,25 @@ const sec = require('../lib/security');
 const dom = require('../lib/domain');
 const H = require('../lib/hours');
 const { clean, emailOk, intIn, isoDateOk, hhmmOk, periodOf, decodeUpload } = require('./common');
-const fc = require('../lib/fieldcrypto');
 
-const A = { auth: 'owner' };
-const EMP_COLS = 'id,name,email,cargo,branch_id,status,phone,address,birthday,hire_date,shift_start,emg_name,emg_rel,emg_phone,dni,personal_email,blood_type,obra_social,notes,must_change_pw,created_at,last_login';
+const A = { auth: ['owner', 'manager', 'hr'] }; // dueño, encargado o RRHH
+const A_OWNER = { auth: 'owner' }; // solo dueño (pagos, borrar datos, config sensible)
+const requireOwner = (ctx) => {
+  if (ctx.user.role !== 'owner') throw forbidden('Solo el dueño del negocio puede hacer esto');
+};
+/** Encargado solo ve su sucursal */
+const managerBranch = (ctx) => (ctx.user.role === 'manager' ? ctx.user.branch_id : null);
+/** RRHH ve todo el negocio (como dueño en operación) pero sin pagos/config sensible */
+const isStaffAdmin = (ctx) => ctx.user.role === 'owner' || ctx.user.role === 'hr';
+
+
+const EMP_COLS = 'id,name,email,role,cargo,branch_id,status,phone,address,birthday,hire_date,shift_start,emg_name,emg_rel,emg_phone,dni,personal_email,blood_type,obra_social,notes,must_change_pw,created_at,last_login';
 
 function getEmp(ctx, id) {
-  const e = get("SELECT * FROM users WHERE id=? AND tenant_id=? AND role='employee'", Number(id), ctx.tenant.id);
+  const e = get("SELECT * FROM users WHERE id=? AND tenant_id=? AND role IN ('employee','manager','hr')", Number(id), ctx.tenant.id);
   if (!e) throw notFound('Empleado no encontrado');
+  const mb = managerBranch(ctx);
+  if (mb && e.branch_id !== mb) throw forbidden('Ese empleado no es de tu sucursal');
   return e;
 }
 const checkBranch = (ctx, id) => {
@@ -35,31 +46,16 @@ function ensureRoom(ctx, extra = 1) {
 const tempPassword = () => crypto.randomBytes(6).toString('base64url');
 /** Descifra PII solo para el dueño autenticado de ese tenant */
 function empPublic(row) {
+  // role incluido si viene en el SELECT
   if (!row) return row;
-  try {
-    const d = fc.decryptUserFields({ ...row });
-    d.email = fc.decryptEmail(d.email) || d.email;
-    return d;
-  } catch (e) {
-    console.error('[owner] empPublic decrypt failed', e && e.message);
-    return { ...row };
-  }
+  const d = fc.decryptUserFields({ ...row });
+  d.email = fc.decryptEmail(d.email) || d.email;
+  return d;
 }
 
 
-const lastMarks = (tid) => {
-  try {
-    return new Map(all(
-      `SELECT user_id,kind,ts,branch_id FROM (SELECT m.*, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY ts DESC, id DESC) rn FROM marks m WHERE tenant_id=?) WHERE rn=1`, tid
-    ).map((r) => [r.user_id, r]));
-  } catch {
-    // Fallback si el motor no soporta window functions
-    const rows = all('SELECT user_id,kind,ts,branch_id FROM marks WHERE tenant_id=? ORDER BY ts DESC, id DESC', tid);
-    const map = new Map();
-    for (const r of rows) if (!map.has(r.user_id)) map.set(r.user_id, r);
-    return map;
-  }
-};
+const lastMarks = (tid) => new Map(all(
+  `SELECT user_id,kind,ts,branch_id FROM (SELECT m.*, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY ts DESC, id DESC) rn FROM marks m WHERE tenant_id=?) WHERE rn=1`, tid).map((r) => [r.user_id, r]));
 const stateOf = (m) => (!m ? 'fuera' : m.kind === 'in' ? 'jornada' : m.kind === 'xin' ? 'extra' : 'fuera');
 
 function hoursByUser(tid, period) {
@@ -72,25 +68,93 @@ function hoursByUser(tid, period) {
   return res;
 }
 
+
+function rrhhStats(t, period, branchId = null) {
+  const r = H.periodRange(period);
+  const emps = branchId
+    ? all("SELECT id,name FROM users WHERE tenant_id=? AND role IN ('employee','manager','hr') AND status='active' AND branch_id=?", t.id, branchId)
+    : all("SELECT id,name FROM users WHERE tenant_id=? AND role IN ('employee','manager','hr') AND status='active'", t.id);
+  const lateMap = new Map(all("SELECT user_id, COUNT(*) n FROM notifs WHERE tenant_id=? AND type='late' AND created_at>=? AND created_at<? GROUP BY user_id", t.id, r.from, r.to).map((x) => [x.user_id, x.n]));
+  const absMap = new Map(all("SELECT user_id, COUNT(*) n FROM notifs WHERE tenant_id=? AND type='absent' AND created_at>=? AND created_at<? GROUP BY user_id", t.id, r.from, r.to).map((x) => [x.user_id, x.n]));
+  const hrs = hoursByUser(t.id, period);
+  const exp = H.expectedHours(period, t, dom.holidaySet(period));
+  let presentDays = 0, totalPossible = emps.length * Math.max(1, H.workingDays(period, dom.holidaySet(period)).weekdays || 1);
+  const ranking = emps.map((e) => {
+    const h = hrs.get(e.id) || { normal_h: 0, extra_h: 0 };
+    const tot = H.round2((h.normal_h || 0) + (h.extra_h || 0));
+    return {
+      id: e.id, name: e.name,
+      late: lateMap.get(e.id) || 0,
+      absent: absMap.get(e.id) || 0,
+      hours: tot,
+      expected: exp,
+      pct: exp > 0 ? Math.round((tot / exp) * 100) : 0,
+    };
+  }).sort((a, b) => b.late - a.late || b.absent - a.absent);
+  const lateTotal = ranking.reduce((a, x) => a + x.late, 0);
+  const absTotal = ranking.reduce((a, x) => a + x.absent, 0);
+  return {
+    employees: emps.length,
+    late_total: lateTotal,
+    absent_total: absTotal,
+    top_late: ranking.filter((x) => x.late > 0).slice(0, 5),
+    top_absent: ranking.filter((x) => x.absent > 0).slice(0, 5),
+    low_attendance: ranking.filter((x) => x.pct < 80).slice(0, 5),
+  };
+}
+
 // ---------------- Dashboard ----------------
 route('GET', '/api/owner/dashboard', A, (ctx) => {
   const t = ctx.tenant, period = periodOf(ctx.query.period);
-  const emps = all(`SELECT ${EMP_COLS} FROM users WHERE tenant_id=? AND role='employee' AND status='active' ORDER BY name`, t.id);
+  const mb = managerBranch(ctx);
+  const empSql = mb
+    ? `SELECT ${EMP_COLS} FROM users WHERE tenant_id=? AND role IN ('employee','manager','hr') AND status='active' AND branch_id=? ORDER BY name`
+    : `SELECT ${EMP_COLS} FROM users WHERE tenant_id=? AND role IN ('employee','manager','hr') AND status='active' ORDER BY name`;
+  const emps = mb ? all(empSql, t.id, mb) : all(empSql, t.id);
   const live = lastMarks(t.id), hrs = hoursByUser(t.id, period);
   const hs = dom.holidaySet(period);
   const expected = H.expectedHours(period, t, hs);
   const wd = H.workingDays(period, hs);
   const holRows = all("SELECT date,name,kind FROM holidays WHERE substr(date,1,7)=? ORDER BY date", period);
+  const r = H.periodRange(period);
+  const lateMap = new Map(all("SELECT user_id, COUNT(*) n FROM notifs WHERE tenant_id=? AND type='late' AND created_at>=? AND created_at<? GROUP BY user_id", t.id, r.from, r.to).map((x) => [x.user_id, x.n]));
   let normal = 0, extra = 0;
   const list = emps.map((e) => {
     const h = hrs.get(e.id) || { normal_h: 0, extra_h: 0 };
     normal += h.normal_h; extra += h.extra_h;
     const m = live.get(e.id);
-    return { id: e.id, name: e.name, cargo: e.cargo, branch_id: e.branch_id, state: stateOf(m), since: m && stateOf(m) !== 'fuera' ? m.ts : null, normal_h: h.normal_h, extra_h: h.extra_h };
+    const st = stateOf(m);
+    return {
+      id: e.id, name: e.name, cargo: e.cargo, branch_id: e.branch_id, role: e.role || 'employee',
+      state: st,
+      since: m && st !== 'fuera' ? m.ts : null,
+      last_mark_at: m ? m.ts : null,
+      last_mark_kind: m ? m.kind : null,
+      late_count: lateMap.get(e.id) || 0,
+      normal_h: h.normal_h, extra_h: h.extra_h,
+    };
   });
-  const total = H.round2(normal + extra), expTotal = expected * emps.length;
+  const total = H.round2(normal + extra), expTotal = expected * Math.max(emps.length, 1);
+  const pendingSql = mb
+    ? `SELECT id,name,email,created_at FROM users WHERE tenant_id=? AND role='employee' AND status='pending' AND (branch_id=? OR branch_id IS NULL) ORDER BY id`
+    : `SELECT id,name,email,created_at FROM users WHERE tenant_id=? AND role='employee' AND status='pending' ORDER BY id`;
+  const pending = (mb ? all(pendingSql, t.id, mb) : all(pendingSql, t.id)).map(empPublic);
+  let notifCount;
+  if (mb) {
+    const ids = emps.map((e) => e.id);
+    if (ids.length) {
+      notifCount = get(`SELECT COUNT(*) n FROM notifs WHERE tenant_id=? AND resolved_at IS NULL AND read_at IS NULL AND user_id IN (${ids.map(() => '?').join(',')})`, t.id, ...ids).n;
+    } else notifCount = 0;
+  } else {
+    notifCount = get('SELECT COUNT(*) n FROM notifs WHERE tenant_id=? AND resolved_at IS NULL AND read_at IS NULL', t.id).n
+      + get("SELECT COUNT(*) n FROM emp_requests WHERE tenant_id=? AND status='pending'", t.id).n;
+  }
+  const branch = mb ? get('SELECT id,name FROM branches WHERE id=? AND tenant_id=?', mb, t.id) : null;
   return {
     period, expected_per_emp: expected, employees: list,
+    is_manager: ctx.user.role === 'manager',
+    is_hr: ctx.user.role === 'hr',
+    manager_branch: branch,
     workdays: { weekdays: wd.weekdays, saturdays: t.dpw === 6 ? wd.saturdays : 0, hpd: t.hpd, sat_h: t.sat_h, dpw: t.dpw },
     holidays: holRows,
     totals: {
@@ -98,18 +162,22 @@ route('GET', '/api/owner/dashboard', A, (ctx) => {
       pct: expTotal ? Math.round((total / expTotal) * 100) : 0,
       working_now: list.filter((e) => e.state !== 'fuera').length,
     },
-    pending: all(`SELECT id,name,email,created_at FROM users WHERE tenant_id=? AND role='employee' AND status='pending' ORDER BY id`, t.id).map(empPublic),
-    notif_count: (get('SELECT COUNT(*) n FROM notifs WHERE tenant_id=? AND resolved_at IS NULL AND read_at IS NULL', t.id).n
-      + get("SELECT COUNT(*) n FROM emp_requests WHERE tenant_id=? AND status='pending'", t.id).n),
-    onboarding: onboardingState(t),
+    pending,
+    notif_count: notifCount,
+    onboarding: (ctx.user.role === 'manager' || ctx.user.role === 'hr') ? null : onboardingState(t),
+    rrhh: rrhhStats(t, period, mb),
   };
 });
+
 
 // ---------------- Empleados ----------------
 route('GET', '/api/owner/employees', A, (ctx) => {
   const live = lastMarks(ctx.tenant.id);
-  const rows = all(`SELECT ${EMP_COLS} FROM users WHERE tenant_id=? AND role='employee' ORDER BY (status='pending') DESC, name`, ctx.tenant.id);
-  return { employees: rows.map((e) => ({ ...empPublic(e), state: e.status === 'active' ? stateOf(live.get(e.id)) : null })) };
+  const mb = managerBranch(ctx);
+  const rows = mb
+    ? all(`SELECT ${EMP_COLS} FROM users WHERE tenant_id=? AND role IN ('employee','manager','hr') AND (branch_id=? OR branch_id IS NULL) ORDER BY (status='pending') DESC, name`, ctx.tenant.id, mb)
+    : all(`SELECT ${EMP_COLS} FROM users WHERE tenant_id=? AND role IN ('employee','manager','hr') ORDER BY (status='pending') DESC, name`, ctx.tenant.id);
+  return { employees: rows.map((e) => ({ ...empPublic(e), role: e.role || 'employee', state: e.status === 'active' ? stateOf(live.get(e.id)) : null })) };
 });
 
 route('POST', '/api/owner/employees', A, async (ctx) => {
@@ -118,6 +186,8 @@ route('POST', '/api/owner/employees', A, async (ctx) => {
   if (!emailOk(email)) throw bad('Email inválido');
   if (require('../lib/security').findUserByEmail(email)) throw new HttpError(409, 'EMAIL_TAKEN', 'Ese email ya está registrado');
   ensureRoom(ctx);
+  const mb = managerBranch(ctx);
+  if (mb) b.branch_id = mb; // encargado solo da de alta en su sucursal
   const branch = checkBranch(ctx, b.branch_id) ?? get('SELECT id FROM branches WHERE tenant_id=? ORDER BY id LIMIT 1', ctx.tenant.id)?.id;
   if (b.shift_start && !hhmmOk(b.shift_start)) throw bad('Horario de entrada inválido (HH:MM)');
   if (b.hire_date && !isoDateOk(b.hire_date)) throw bad('Fecha de ingreso inválida');
@@ -202,21 +272,35 @@ route('POST', '/api/owner/employees/:id/enable', A, (ctx) => {
   run("UPDATE users SET status='active' WHERE id=?", e.id);
   return { ok: true };
 });
-route('POST', '/api/owner/employees/:id/delete', A, (ctx) => {
+route('POST', '/api/owner/employees/:id/delete', A_OWNER, (ctx) => {
   const e = getEmp(ctx, ctx.params.id);
   if (e.status === 'active') throw bad('Deshabilitalo antes de eliminarlo, o confirmá borrado forzado');
   // soft-check: allow delete of disabled/rejected/pending
   run('DELETE FROM sessions WHERE user_id=?', e.id);
-  run('DELETE FROM users WHERE id=? AND tenant_id=? AND role=?', e.id, ctx.tenant.id, 'employee');
+  run("DELETE FROM users WHERE id=? AND tenant_id=? AND role IN ('employee','manager','hr')", e.id, ctx.tenant.id);
   audit(ctx.user.id, ctx.tenant.id, 'employee.deleted', { id: e.id, name: e.name });
   return { ok: true };
 });
-route('POST', '/api/owner/employees/:id/delete-force', A, (ctx) => {
+route('POST', '/api/owner/employees/:id/delete-force', A_OWNER, (ctx) => {
   const e = getEmp(ctx, ctx.params.id);
   run('DELETE FROM sessions WHERE user_id=?', e.id);
-  run('DELETE FROM users WHERE id=? AND tenant_id=? AND role=?', e.id, ctx.tenant.id, 'employee');
+  run("DELETE FROM users WHERE id=? AND tenant_id=? AND role IN ('employee','manager','hr')", e.id, ctx.tenant.id);
   audit(ctx.user.id, ctx.tenant.id, 'employee.deleted', { id: e.id, name: e.name, force: true });
   return { ok: true };
+});
+
+
+route('POST', '/api/owner/employees/:id/role', A_OWNER, (ctx) => {
+  const e = getEmp(ctx, ctx.params.id);
+  if (e.id === ctx.user.id) throw bad('No podés cambiarte el rol a vos mismo');
+  const role = ['manager', 'hr', 'employee'].includes(ctx.body.role) ? ctx.body.role : 'employee';
+  if (role === 'manager' && !e.branch_id) throw bad('Asigná una sucursal al empleado antes de hacerlo encargado');
+  run('UPDATE users SET role=? WHERE id=? AND tenant_id=?', role, e.id, ctx.tenant.id);
+  // Cerrar sesiones del usuario: si era encargado/RRHH y vuelve a empleado (o al revés),
+  // debe volver a ingresar y ver el panel correcto (evita errores y pantallas colgadas).
+  sec.destroyUserSessions(e.id);
+  audit(ctx.user.id, ctx.tenant.id, 'employee.role', { id: e.id, role, from: e.role });
+  return { ok: true, role };
 });
 
 route('POST', '/api/owner/employees/:id/reset-password', A, async (ctx) => {
@@ -230,13 +314,31 @@ route('POST', '/api/owner/employees/:id/reset-password', A, async (ctx) => {
 // ---------------- Notificaciones y permisos ----------------
 route('GET', '/api/owner/notifs', A, (ctx) => {
   const cols = 'id,type,user_id,ref_id,text,detail,created_at,read_at,resolved_at';
-  const notifs = all(`SELECT ${cols} FROM notifs WHERE tenant_id=? AND resolved_at IS NULL ORDER BY id DESC LIMIT 100`, ctx.tenant.id);
+  const mb = managerBranch(ctx);
+  let notifs, history, orphan;
+  if (mb) {
+    const team = all("SELECT id FROM users WHERE tenant_id=? AND branch_id=? AND role IN ('employee','manager','hr')", ctx.tenant.id, mb).map((u) => u.id);
+    if (!team.length) {
+      notifs = []; history = ctx.query.history ? [] : undefined; orphan = [];
+    } else {
+      const ph = team.map(() => '?').join(',');
+      notifs = all(`SELECT ${cols} FROM notifs WHERE tenant_id=? AND resolved_at IS NULL AND user_id IN (${ph}) ORDER BY id DESC LIMIT 100`, ctx.tenant.id, ...team);
+      history = ctx.query.history
+        ? all(`SELECT ${cols} FROM notifs WHERE tenant_id=? AND resolved_at IS NOT NULL AND user_id IN (${ph}) ORDER BY resolved_at DESC LIMIT 30`, ctx.tenant.id, ...team)
+        : undefined;
+      orphan = all(`SELECT p.id,p.type,p.from_date,p.to_date,u.name employee FROM permits p JOIN users u ON u.id=p.user_id
+        WHERE p.tenant_id=? AND p.status='pending' AND u.branch_id=? AND NOT EXISTS (SELECT 1 FROM notifs n WHERE n.tenant_id=p.tenant_id AND n.type='permit' AND n.ref_id=p.id AND n.resolved_at IS NULL) ORDER BY p.id DESC`, ctx.tenant.id, mb);
+    }
+  } else {
+    notifs = all(`SELECT ${cols} FROM notifs WHERE tenant_id=? AND resolved_at IS NULL ORDER BY id DESC LIMIT 100`, ctx.tenant.id);
+    history = ctx.query.history ? all(`SELECT ${cols} FROM notifs WHERE tenant_id=? AND resolved_at IS NOT NULL ORDER BY resolved_at DESC LIMIT 30`, ctx.tenant.id) : undefined;
+    orphan = all(`SELECT p.id,p.type,p.from_date,p.to_date,u.name employee FROM permits p JOIN users u ON u.id=p.user_id
+      WHERE p.tenant_id=? AND p.status='pending' AND NOT EXISTS (SELECT 1 FROM notifs n WHERE n.tenant_id=p.tenant_id AND n.type='permit' AND n.ref_id=p.id AND n.resolved_at IS NULL) ORDER BY p.id DESC`, ctx.tenant.id);
+  }
   return {
     notifs, unread: notifs.filter((n) => !n.read_at).length,
-    history: ctx.query.history ? all(`SELECT ${cols} FROM notifs WHERE tenant_id=? AND resolved_at IS NOT NULL ORDER BY resolved_at DESC LIMIT 30`, ctx.tenant.id) : undefined,
-    // permisos pendientes cuyo aviso se borró: no se pierden, se siguen pudiendo resolver
-    orphan_permits: all(`SELECT p.id,p.type,p.from_date,p.to_date,u.name employee FROM permits p JOIN users u ON u.id=p.user_id
-      WHERE p.tenant_id=? AND p.status='pending' AND NOT EXISTS (SELECT 1 FROM notifs n WHERE n.tenant_id=p.tenant_id AND n.type='permit' AND n.ref_id=p.id AND n.resolved_at IS NULL) ORDER BY p.id DESC`, ctx.tenant.id),
+    history,
+    orphan_permits: orphan,
   };
 });
 route('DELETE', '/api/owner/notifs/:id', A, (ctx) => {
@@ -266,13 +368,22 @@ route('POST', '/api/owner/notifs/:id/resolve', A, (ctx) => {
   run('UPDATE notifs SET resolved_at=? WHERE id=?', Date.now(), n.id);
   return { ok: true };
 });
-route('GET', '/api/owner/permits', A, (ctx) => ({
-  permits: all(`SELECT p.*, u.name employee FROM permits p JOIN users u ON u.id=p.user_id WHERE p.tenant_id=? ORDER BY (p.status='pending') DESC, p.id DESC LIMIT 100`, ctx.tenant.id),
-}));
+route('GET', '/api/owner/permits', A, (ctx) => {
+  const mb = managerBranch(ctx);
+  const permits = mb
+    ? all(`SELECT p.*, u.name employee FROM permits p JOIN users u ON u.id=p.user_id WHERE p.tenant_id=? AND u.branch_id=? ORDER BY (p.status='pending') DESC, p.id DESC LIMIT 100`, ctx.tenant.id, mb)
+    : all(`SELECT p.*, u.name employee FROM permits p JOIN users u ON u.id=p.user_id WHERE p.tenant_id=? ORDER BY (p.status='pending') DESC, p.id DESC LIMIT 100`, ctx.tenant.id);
+  return { permits };
+});
 route('POST', '/api/owner/permits/:id/decide', A, (ctx) => {
   const p = get('SELECT * FROM permits WHERE id=? AND tenant_id=?', Number(ctx.params.id), ctx.tenant.id);
   if (!p) throw notFound();
   if (p.status !== 'pending') throw bad('Esta solicitud ya fue resuelta');
+  const mb = managerBranch(ctx);
+  if (mb) {
+    const u = get('SELECT branch_id FROM users WHERE id=?', p.user_id);
+    if (!u || u.branch_id !== mb) throw forbidden('Ese permiso no es de tu sucursal');
+  }
   const ok = ctx.body.approve === true;
   tx(() => {
     run('UPDATE permits SET status=?, decided_at=? WHERE id=?', ok ? 'approved' : 'rejected', Date.now(), p.id);
@@ -296,7 +407,7 @@ function branchFields(b, cur = {}) {
     radius: b.radius !== undefined ? intIn(b.radius, 20, 300, 'Radio') : cur.radius ?? 50,
   };
 }
-route('POST', '/api/owner/branches', A, (ctx) => {
+route('POST', '/api/owner/branches', A_OWNER, (ctx) => {
   const n = get('SELECT COUNT(*) n FROM branches WHERE tenant_id=?', ctx.tenant.id).n;
   if (n >= 1 && !dom.planFeatures(ctx.tenant).multi_suc) throw new HttpError(402, 'MOD_LOCKED', 'Activá el módulo Multi-sucursal para agregar más locales.');
   if (n >= 100) throw bad('Límite de sucursales alcanzado');
@@ -311,7 +422,7 @@ route('PATCH', '/api/owner/branches/:id', A, (ctx) => {
   run('UPDATE branches SET name=?,address=?,lat=?,lng=?,radius=? WHERE id=?', f.name, f.address, f.lat, f.lng, f.radius, cur.id);
   return { ok: true };
 });
-route('DELETE', '/api/owner/branches/:id', A, (ctx) => {
+route('DELETE', '/api/owner/branches/:id', A_OWNER, (ctx) => {
   const all_ = all('SELECT id FROM branches WHERE tenant_id=? ORDER BY id', ctx.tenant.id);
   const id = Number(ctx.params.id);
   if (!all_.some((b) => b.id === id)) throw notFound();
@@ -334,6 +445,20 @@ route('GET', '/api/owner/qr/:branchId', A, (ctx) => {
 });
 
 // ---------------- Configuración ----------------
+
+route('GET', '/api/owner/industry-templates', A, () => ({ templates: dom.INDUSTRY_TEMPLATES }));
+route('POST', '/api/owner/industry-template', A_OWNER, (ctx) => {
+  const key = String(ctx.body.template || '');
+  const tpl = dom.INDUSTRY_TEMPLATES[key];
+  if (!tpl) throw bad('Plantilla inválida');
+  run('UPDATE tenants SET hpd=?,dpw=?,sat_h=?,schedule_start=?,schedule_end=?,late_tolerance_min=?,allow_extra=? WHERE id=?',
+    tpl.hpd, tpl.dpw, tpl.sat_h, tpl.schedule_start, tpl.schedule_end, tpl.late_tolerance_min, tpl.allow_extra, ctx.tenant.id);
+  // radio en sucursales
+  if (tpl.radius) run('UPDATE branches SET radius=? WHERE tenant_id=?', tpl.radius, ctx.tenant.id);
+  audit(ctx.user.id, ctx.tenant.id, 'settings.industry_template', { template: key });
+  return { ok: true, template: key, applied: tpl };
+});
+
 route('GET', '/api/owner/settings', A, (ctx) => {
   const t = ctx.tenant;
   return {
@@ -343,7 +468,7 @@ route('GET', '/api/owner/settings', A, (ctx) => {
     mark_qr: t.mark_qr !== 0 && t.mark_qr !== false, mark_gps: t.mark_gps !== 0 && t.mark_gps !== false,
   };
 });
-route('PATCH', '/api/owner/settings', A, (ctx) => {
+route('PATCH', '/api/owner/settings', A_OWNER, (ctx) => {
   const b = ctx.body, t = ctx.tenant;
   const theme = b.theme !== undefined ? String(b.theme) : t.theme;
   if (!/^#[0-9a-fA-F]{6}$/.test(theme)) throw bad('Color inválido');
@@ -397,19 +522,32 @@ route('PATCH', '/api/owner/emp-requests/:id', A, (ctx) => {
   const id = Number(ctx.params.id);
   const r = get('SELECT * FROM emp_requests WHERE id=? AND tenant_id=?', id, ctx.tenant.id);
   if (!r) throw notFound();
+  if (r.status !== 'pending' && ctx.body.status && ctx.body.status !== r.status) {
+    // permitir re-editar respuesta, pero no volver a pending
+  }
   const status = ['pending','answered','closed','rejected'].includes(ctx.body.status) ? ctx.body.status : r.status;
   const reply = ctx.body.reply !== undefined ? clean(ctx.body.reply, 2000) : r.reply;
-  run('UPDATE emp_requests SET status=?, reply=?, updated_at=? WHERE id=?', status, reply || null, Date.now(), id);
+  const now = Date.now();
+  run('UPDATE emp_requests SET status=?, reply=?, updated_at=? WHERE id=?', status, reply || null, now, id);
   audit(ctx.user.id, ctx.tenant.id, 'emp_request.' + status, { id });
-  // notify employee via notifs if table exists
-  try {
-    run("INSERT INTO notifs(tenant_id,type,user_id,ref_id,text,detail,created_at) VALUES(?,?,?,?,?,?,?)",
-      ctx.tenant.id, 'emp_request', r.user_id, id, 'Respuesta a tu solicitud', String(reply || status).slice(0, 120), Date.now());
-  } catch (_) {}
+  // Deja de aparecer como "pendiente / responder" en Notificaciones del dueño
+  if (status !== 'pending') {
+    run("UPDATE notifs SET resolved_at=?, read_at=COALESCE(read_at,?) WHERE tenant_id=? AND type='emp_request' AND ref_id=? AND resolved_at IS NULL",
+      now, now, ctx.tenant.id, id);
+  }
+  // Aviso al empleado (su panel / notifs)
+  if (status === 'answered' || status === 'rejected') {
+    try {
+      run("INSERT INTO notifs(tenant_id,type,user_id,ref_id,text,detail,created_at) VALUES(?,?,?,?,?,?,?)",
+        ctx.tenant.id, 'emp_request_reply', r.user_id, id,
+        status === 'rejected' ? 'Tu solicitud fue rechazada' : 'Respondieron tu solicitud',
+        String(reply || status).slice(0, 200), now);
+    } catch (_) {}
+  }
   return { ok: true };
 });
 
-route('POST', '/api/owner/plan/upgrade', A, (ctx) => {
+route('POST', '/api/owner/plan/upgrade', A_OWNER, (ctx) => {
   const tier = String(ctx.body.plan_tier || '');
   if (!['esencial', 'pro', 'completo'].includes(tier)) throw bad('Plan inválido');
   const order = { esencial: 0, pro: 1, completo: 2 };
@@ -451,7 +589,7 @@ route('POST', '/api/owner/branding/logo', { auth: 'owner', limit: 4 * 1024 * 102
   run('UPDATE tenants SET logo_path=? WHERE id=?', rel, ctx.tenant.id);
   return { ok: true, logo_url: '/api/tenant/logo?t=' + Date.now() };
 });
-route('DELETE', '/api/owner/branding/logo', A, (ctx) => {
+route('DELETE', '/api/owner/branding/logo', A_OWNER, (ctx) => {
   const cur = get('SELECT logo_path FROM tenants WHERE id=?', ctx.tenant.id);
   if (cur?.logo_path) { try { fs.unlinkSync(path.join(cfg.DATA_DIR, 'uploads', cur.logo_path)); } catch (_) {} }
   run('UPDATE tenants SET logo_path=NULL WHERE id=?', ctx.tenant.id);
@@ -469,7 +607,7 @@ route('POST', '/api/owner/branding/sign', { auth: 'owner', limit: 4 * 1024 * 102
   run('UPDATE tenants SET sign_path=? WHERE id=?', rel, ctx.tenant.id);
   return { ok: true };
 });
-route('DELETE', '/api/owner/branding/sign', A, (ctx) => {
+route('DELETE', '/api/owner/branding/sign', A_OWNER, (ctx) => {
   const cur = get('SELECT sign_path FROM tenants WHERE id=?', ctx.tenant.id);
   if (cur?.sign_path) { try { fs.unlinkSync(path.join(cfg.DATA_DIR, 'uploads', cur.sign_path)); } catch (_) {} }
   run('UPDATE tenants SET sign_path=NULL WHERE id=?', ctx.tenant.id);
@@ -501,6 +639,8 @@ const fmtDate = (ts) => { const p = H.arParts(ts); return `${H.pad(p.d)}/${H.pad
 
 function buildReport(ctx, type, period, branchId) {
   const t = ctx.tenant, r = H.periodRange(period), now = Date.now();
+  const mb = managerBranch(ctx);
+  if (mb) branchId = mb;
   const empSql = branchId
     ? `SELECT id,name,cargo FROM users WHERE tenant_id=? AND role='employee' AND status IN ('active','disabled') AND branch_id=? ORDER BY name`
     : `SELECT id,name,cargo FROM users WHERE tenant_id=? AND role='employee' AND status IN ('active','disabled') ORDER BY name`;
@@ -545,6 +685,41 @@ function buildReport(ctx, type, period, branchId) {
     }
     return { title: 'Asistencia diaria', columns: ['Fecha', 'Empleado', 'Entrada', 'Salida', 'Horas normales', 'Horas extra', 'Salida automática', 'Marca manual'], rows };
   }
+  if (type === 'contable') {
+    const hrs = hoursByUser(t.id, period), exp = H.expectedHours(period, t, dom.holidaySet(period));
+    const lates = new Map(all("SELECT user_id, COUNT(*) n FROM notifs WHERE tenant_id=? AND type='late' AND created_at>=? AND created_at<? GROUP BY user_id", t.id, r.from, r.to).map((x) => [x.user_id, x.n]));
+    const absents = new Map(all("SELECT user_id, COUNT(*) n FROM notifs WHERE tenant_id=? AND type='absent' AND created_at>=? AND created_at<? GROUP BY user_id", t.id, r.from, r.to).map((x) => [x.user_id, x.n]));
+    const rows = emps.map((e) => {
+      const h = hrs.get(e.id) || { normal_h: 0, extra_h: 0 };
+      const tot = H.round2(h.normal_h + h.extra_h);
+      return [
+        e.name,
+        e.cargo || '',
+        period,
+        h.normal_h,
+        h.extra_h,
+        tot,
+        exp,
+        H.round2(tot - exp),
+        lates.get(e.id) || 0,
+        absents.get(e.id) || 0,
+        t.hpd,
+        t.dpw,
+      ];
+    });
+    return {
+      title: 'Export contable / liquidación',
+      columns: ['Empleado', 'Cargo', 'Período', 'Hs normales', 'Hs extra', 'Hs total', 'Hs esperadas', 'Diferencia', 'Tardanzas', 'Ausencias (sin marca)', 'Hs/día ref.', 'Días/sem ref.'],
+      rows,
+      summary: {
+        'Período': period,
+        'Empleados': rows.length,
+        'Total hs normales': H.round2(rows.reduce((a, r) => a + Number(r[3]), 0)),
+        'Total hs extra': H.round2(rows.reduce((a, r) => a + Number(r[4]), 0)),
+      },
+      note: 'Archivo orientado a liquidación. Las horas son las registradas en AsistOK; el empleador es responsable del cálculo final de sueldos.',
+    };
+  }
   if (type === 'late') {
     const rows = all("SELECT n.created_at, u.name, n.detail FROM notifs n LEFT JOIN users u ON u.id=n.user_id WHERE n.tenant_id=? AND n.type='late' AND n.created_at>=? AND n.created_at<? ORDER BY n.created_at", t.id, r.from, r.to)
       .map((x) => [fmtDate(x.created_at), x.name || '', x.detail || '']);
@@ -580,33 +755,51 @@ route('GET', '/api/owner/reports/export', A, (ctx) => {
 });
 
 /** Paquete completo del negocio (JSON legible, PII descifrada) — útil para backup y para responder a la AAIP */
-route('GET', '/api/owner/export/all', A, (ctx) => {
+route('GET', '/api/owner/export/all', A_OWNER, (ctx) => {
   const tid = ctx.tenant.id;
-  const emps = all(`SELECT ${EMP_COLS} FROM users WHERE tenant_id=? AND role='employee'`, tid).map((e) => {
-    const d = empPublic(e);
-    delete d.pass_hash;
-    return d;
-  });
-  const docs = all('SELECT id,user_id,kind,title,period,cert_type,filename,mime,created_at,sign_status,sign_note,signed_at,signed_name FROM docs WHERE tenant_id=? ORDER BY id', tid);
+  // Consultas defensivas: no depender de columnas de migraciones opcionales (evita INTERNAL en export).
+  const safeAll = (sql, ...params) => {
+    try { return all(sql, ...params); } catch (e) {
+      console.error('[export/all]', sql.slice(0, 80), e.message);
+      return null;
+    }
+  };
+  const emps = (safeAll(`SELECT ${EMP_COLS} FROM users WHERE tenant_id=? AND role IN ('employee','manager','hr')`, tid) || [])
+    .map((e) => {
+      const d = empPublic(e);
+      delete d.pass_hash;
+      delete d.email_hash;
+      return d;
+    });
+  let marks = safeAll('SELECT id,user_id,branch_id,kind,ts,lat,lng,accuracy,dist,auto,source,note,created_by FROM marks WHERE tenant_id=? ORDER BY ts', tid);
+  if (!marks) marks = safeAll('SELECT id,user_id,branch_id,kind,ts,lat,lng,accuracy,dist,auto FROM marks WHERE tenant_id=? ORDER BY ts', tid) || [];
+  let docs = safeAll('SELECT id,user_id,kind,title,period,cert_type,filename,mime,created_at,sign_status,sign_note,signed_at,signed_name FROM docs WHERE tenant_id=? ORDER BY id', tid);
+  if (!docs) docs = safeAll('SELECT id,user_id,kind,title,period,cert_type,filename,mime,created_at,sign_status,sign_note,signed_at FROM docs WHERE tenant_id=? ORDER BY id', tid) || [];
+  let payments = safeAll('SELECT id,kind,qty,amount,status,ext_ref,mp_payment_id,created_at,applied_at FROM payments WHERE tenant_id=? ORDER BY id', tid);
+  if (!payments) payments = safeAll('SELECT id,kind,qty,amount,status,ext_ref,mp_payment_id,created_at FROM payments WHERE tenant_id=? ORDER BY id', tid) || [];
+  let requests = safeAll('SELECT id,user_id,kind,subject,body,status,reply,created_at,updated_at FROM emp_requests WHERE tenant_id=? ORDER BY id', tid) || [];
   const data = {
     exported_at: new Date().toISOString(),
     purpose: 'Exportación de datos del negocio (Ley 25.326 / backup)',
     tenant: {
       id: tid, name: ctx.tenant.name, slug: ctx.tenant.slug, plan: ctx.tenant.plan,
-      status: ctx.tenant.status, created_at: ctx.tenant.created_at, paid_until: ctx.tenant.paid_until,
+      plan_tier: ctx.tenant.plan_tier, status: ctx.tenant.status,
+      created_at: ctx.tenant.created_at, paid_until: ctx.tenant.paid_until,
     },
-    branches: all('SELECT id,name,lat,lng,radius,address FROM branches WHERE tenant_id=?', tid),
+    branches: safeAll('SELECT id,name,lat,lng,radius,address,created_at FROM branches WHERE tenant_id=?', tid) || [],
     employees: emps,
-    marks: all('SELECT id,user_id,branch_id,kind,ts,lat,lng,accuracy,dist,auto,source,note,created_by FROM marks WHERE tenant_id=? ORDER BY ts', tid),
-    permits: all('SELECT * FROM permits WHERE tenant_id=?', tid),
+    marks,
+    permits: safeAll('SELECT id,user_id,type,from_date,to_date,note,status,created_at,decided_at FROM permits WHERE tenant_id=?', tid) || [],
     docs,
-    payments: all('SELECT id,kind,qty,amount,status,ext_ref,mp_payment_id,created_at,applied_at FROM payments WHERE tenant_id=? ORDER BY id', tid),
+    payments,
+    emp_requests: requests,
   };
+  const body = JSON.stringify(data, null, 2);
   return {
     __file: {
-      buf: Buffer.from(JSON.stringify(data, null, 2)),
-      filename: `asistok-export-${ctx.tenant.slug}-${new Date().toISOString().slice(0, 10)}.json`,
-      mime: 'application/json',
+      buf: Buffer.from(body, 'utf8'),
+      filename: `asistok-export-${ctx.tenant.slug || 'negocio'}-${new Date().toISOString().slice(0, 10)}.json`,
+      mime: 'application/json; charset=utf-8',
     },
   };
 });
@@ -618,14 +811,19 @@ route('GET', '/api/owner/employees/:id/export', A, (ctx) => {
   delete d.pass_hash;
   delete d.email_hash;
   const tid = ctx.tenant.id;
+  const q = (sql, ...params) => { try { return all(sql, ...params); } catch { return null; } };
+  let marks = q('SELECT id,branch_id,kind,ts,lat,lng,accuracy,dist,auto,source,note FROM marks WHERE user_id=? AND tenant_id=? ORDER BY ts', e.id, tid);
+  if (!marks) marks = q('SELECT id,branch_id,kind,ts,lat,lng,accuracy,dist,auto FROM marks WHERE user_id=? AND tenant_id=? ORDER BY ts', e.id, tid) || [];
+  let docs = q('SELECT id,kind,title,period,cert_type,filename,created_at,sign_status,sign_note,signed_at,signed_name FROM docs WHERE user_id=? AND tenant_id=? ORDER BY id', e.id, tid);
+  if (!docs) docs = q('SELECT id,kind,title,period,cert_type,filename,created_at,sign_status,sign_note,signed_at FROM docs WHERE user_id=? AND tenant_id=? ORDER BY id', e.id, tid) || [];
   const data = {
     exported_at: new Date().toISOString(),
     purpose: 'Exportación de datos personales del empleado (Ley 25.326 — derechos de acceso)',
     business: { name: ctx.tenant.name, slug: ctx.tenant.slug },
     employee: d,
-    marks: all('SELECT id,branch_id,kind,ts,lat,lng,accuracy,dist,auto,source,note FROM marks WHERE user_id=? AND tenant_id=? ORDER BY ts', e.id, tid),
-    permits: all('SELECT id,type,from_date,to_date,note,status,created_at,decided_at FROM permits WHERE user_id=? AND tenant_id=?', e.id, tid),
-    docs: all('SELECT id,kind,title,period,cert_type,filename,created_at,sign_status,sign_note,signed_at,signed_name FROM docs WHERE user_id=? AND tenant_id=? ORDER BY id', e.id, tid),
+    marks,
+    permits: q('SELECT id,type,from_date,to_date,note,status,created_at,decided_at FROM permits WHERE user_id=? AND tenant_id=?', e.id, tid) || [],
+    docs,
   };
   const safeName = String(d.name || e.id).replace(/[^\w\-áéíóúñÁÉÍÓÚÑ ]+/g, '').slice(0, 40).trim().replace(/\s+/g, '-') || 'empleado';
   audit(ctx.user.id, tid, 'employee.data_export', { id: e.id, name: d.name });
@@ -643,7 +841,7 @@ route('GET', '/api/owner/employees/:id/export', A, (ctx) => {
  * Borra sesiones, marcas, permisos, documentos (y archivos), notificaciones y el usuario.
  * Queda registro de auditoría (sin el contenido de los datos) para demostrar el cumplimiento.
  */
-route('POST', '/api/owner/employees/:id/erase', A, (ctx) => {
+route('POST', '/api/owner/employees/:id/erase', A_OWNER, (ctx) => {
   const e = getEmp(ctx, ctx.params.id);
   const reason = clean(ctx.body.reason, 200) || 'solicitud_titular_o_aaip';
   const nameSnap = e.name;
@@ -810,7 +1008,7 @@ function onboardingState(t) {
   };
 }
 route('GET', '/api/owner/onboarding', A, (ctx) => onboardingState(ctx.tenant));
-route('POST', '/api/owner/onboarding', A, (ctx) => {
+route('POST', '/api/owner/onboarding', A_OWNER, (ctx) => {
   const { action, step } = ctx.body;
   if (!['dismiss', 'reopen', 'done', 'undo'].includes(action)) throw bad('Acción inválida');
   if ((action === 'done' || action === 'undo') && !['theme', 'location', 'markmode', 'hours', 'employees', 'mark', 'logo', 'screen', 'reports'].includes(step)) throw bad('Paso inválido');
@@ -920,7 +1118,7 @@ route('POST', '/api/owner/security/clear', A, (ctx) => {
 });
 
 // ---------------- Cancelar suscripción ----------------
-route('POST', '/api/owner/plan/cancel', A, async (ctx) => {
+route('POST', '/api/owner/plan/cancel', A_OWNER, async (ctx) => {
   const t = ctx.tenant;
   if (t.plan !== 'sub') throw bad('Solo las suscripciones mensuales se pueden cancelar.');
   if (t.cancel_at) return { ok: true, already: true, paid_until: t.paid_until };

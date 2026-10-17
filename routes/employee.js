@@ -7,6 +7,7 @@ const { get, all, run, tx } = require('../lib/db');
 const sec = require('../lib/security');
 const dom = require('../lib/domain');
 const H = require('../lib/hours');
+const alerts = require('../lib/alerts');
 const { clean, isoDateOk, periodOf, decodeUpload } = require('./common');
 const fc = require('../lib/fieldcrypto');
 const { saveFile } = require('./owner');
@@ -57,6 +58,7 @@ route('GET', '/api/me/payroll-summary', E, (ctx) => {
   const hours = (() => {
     try {
       const H = require('../lib/hours');
+const alerts = require('../lib/alerts');
       // simplified: count marks this month
       const from = period + '-01';
       const rows = all("SELECT kind,ts FROM marks WHERE user_id=? AND ts >= ? ORDER BY ts", uid, Date.parse(from + 'T00:00:00-03:00') || 0);
@@ -154,8 +156,10 @@ route('POST', '/api/me/mark', E, (ctx) => {
     const allowed = branch.radius + Math.min(acc, 25);
     if (dist > allowed) {
       logSec(ctx, 'geo_out', `${dist} m de ${branch.name}`);
+      const geoDetail = `${dist} m de ${branch.name} · rechazado`;
       run("INSERT INTO notifs(tenant_id,type,user_id,text,detail,created_at) VALUES(?,?,?,?,?,?)",
-        ctx.tenant.id, 'geo_out', ctx.user.id, `Fuera de zona — ${ctx.user.name}`, `${dist} m de ${branch.name} · rechazado`, Date.now());
+        ctx.tenant.id, 'geo_out', ctx.user.id, `Fuera de zona — ${ctx.user.name}`, geoDetail, Date.now());
+      alerts.notifyOwner(ctx.tenant.id, { title: `Fuera de zona — ${ctx.user.name}`, detail: geoDetail });
       throw new HttpError(403, 'GEO_OUT', `Estás a ${dist} m de ${branch.name} y el máximo permitido es ${branch.radius} m. Acercate al local y probá de nuevo; si ya estás adentro, esperá unos segundos a que el GPS mejore.`, { dist });
     }
   } else if (!allowGps && viaQr) {
@@ -184,8 +188,10 @@ route('POST', '/api/me/mark', E, (ctx) => {
         const dayStart = H.arToTs(p.y, p.m, p.d);
         const tol = Number(ctx.tenant.late_tolerance_min) || 0;
         if (late > tol && !get("SELECT 1 FROM notifs WHERE user_id=? AND type='late' AND created_at>=?", ctx.user.id, dayStart)) {
+          const lateDetail = `${H.pad(p.hh)}:${H.pad(p.mm)} · turno ${shift} (tol. ${tol} min)`;
           run("INSERT INTO notifs(tenant_id,type,user_id,text,detail,created_at) VALUES(?,?,?,?,?,?)",
-            ctx.tenant.id, 'late', ctx.user.id, `Llegó tarde — ${ctx.user.name}`, `${H.pad(p.hh)}:${H.pad(p.mm)} · turno ${shift} (tol. ${tol} min)`, now);
+            ctx.tenant.id, 'late', ctx.user.id, `Llegó tarde — ${ctx.user.name}`, lateDetail, now);
+          alerts.notifyOwner(ctx.tenant.id, { title: `Llegó tarde — ${ctx.user.name}`, detail: lateDetail });
         }
       }
     }
