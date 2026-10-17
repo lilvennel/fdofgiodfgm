@@ -19,9 +19,54 @@ function issueVerification(user) {
   run('INSERT INTO email_verifications(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)', sec.sha(token), user.id, now + VERIFY_TTL_MS, now);
   const link = `${cfg.APP_URL}/?verify=${token}`;
   const to = fc.decryptEmail(user.email) || user.email;
-  sendMail(to, 'Confirmá tu email · Asist OK',
-    `<p>Hola ${esc(user.name)},</p><p>Para confirmar tu email entrá a este link (vale 24 horas):</p><p><a href="${link}">${link}</a></p><p>Si no creaste una cuenta en Asist OK, ignorá este mensaje.</p>`)
-    .catch((e) => console.error('[mail]', e.message));
+
+  sendMail(to, 'Confirmá tu email · AsistOK', `
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#f0fdfa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0fdfa;padding:40px 16px;">
+    <tr><td align="center">
+      <table width="100%" style="max-width:520px;background-color:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(15,118,110,0.08);">
+        <tr>
+          <td style="background:linear-gradient(135deg,#0f766e 0%,#14b8a6 100%);padding:32px 40px;text-align:center;">
+            <span style="color:#ffffff;font-size:22px;font-weight:700;">⏱ AsistOK</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:40px 40px 32px;">
+            <h1 style="margin:0 0 12px;font-size:24px;font-weight:700;color:#0f172a;line-height:1.3;">Confirmá tu email</h1>
+            <p style="margin:0 0 28px;font-size:15px;color:#64748b;line-height:1.6;">
+              Hola ${esc(user.name)}, gracias por registrarte en <strong style="color:#0f766e;">AsistOK</strong>. Solo falta un paso para activar tu cuenta.
+            </p>
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+              <tr><td align="center">
+                <a href="${link}" style="display:inline-block;background-color:#0f766e;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(15,118,110,0.35);">
+                  Verificar mi correo
+                </a>
+              </td></tr>
+            </table>
+            <p style="margin:0 0 8px;font-size:14px;color:#64748b;line-height:1.5;">Este enlace es válido por <strong>24 horas</strong>.</p>
+            <p style="margin:0 0 24px;font-size:14px;color:#64748b;line-height:1.5;">Si no creaste una cuenta en AsistOK, podés ignorar este correo.</p>
+            <div style="height:1px;background-color:#e2e8f0;margin:28px 0;"></div>
+            <p style="margin:0;font-size:13px;color:#94a3b8;line-height:1.5;">
+              Si el botón no funciona, copiá y pegá este enlace:<br>
+              <a href="${link}" style="color:#0f766e;word-break:break-all;">${link}</a>
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="background-color:#f8fafc;padding:24px 40px;text-align:center;border-top:1px solid #e2e8f0;">
+            <p style="margin:0 0 6px;font-size:13px;color:#64748b;">© 2025 AsistOK · Control de asistencia</p>
+            <p style="margin:0;font-size:12px;color:#94a3b8;">Hecho para comercios y equipos en Argentina</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+  `).catch((e) => console.error('[mail]', e.message));
 }
 // ---- H5: límites de login solo por FALLOS; cada IP se bloquea a sí misma, nadie puede dejar afuera a otra persona ----
 const LOGIN_PAIR = { free: 4, windowMs: 15 * 60e3, baseLockMs: 60e3, maxLockMs: 15 * 60e3 };   // email + IP: 4 fallos libres, después 1, 2, 4… min (tope 15)
