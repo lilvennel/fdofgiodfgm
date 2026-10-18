@@ -2,19 +2,26 @@ FROM node:22-alpine
 
 WORKDIR /app
 
+# su-exec: arrancar como root, arreglar permisos del volume y bajar a node
+RUN apk add --no-cache su-exec wget
+
 COPY package.json server.js ./
 COPY lib ./lib
 COPY routes ./routes
 COPY scripts ./scripts
 COPY public ./public
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
 ENV NODE_ENV=production PORT=3000 DATA_DIR=/data
 
-# Crear la carpeta y darle ownership al usuario node ANTES de cambiar de usuario
+# Placeholder en la imagen (el volume de Railway lo reemplaza en runtime)
 RUN mkdir -p /data/uploads && chown -R node:node /data
 
 EXPOSE 3000
-USER node
 
 HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://localhost:3000/healthz || exit 1
-CMD ["node", "server.js"]
+
+# Importante: NO poner USER node acá.
+# El entrypoint corre como root, hace chown del volume montado y luego ejecuta como node.
+ENTRYPOINT ["/docker-entrypoint.sh"]
