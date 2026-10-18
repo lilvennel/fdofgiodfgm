@@ -48,6 +48,13 @@ function getEmp(ctx, id) {
   if (mb && e.branch_id !== mb) throw forbidden('Ese empleado no es de tu sucursal');
   return e;
 }
+/** Jerarquía de cuentas: el dueño gestiona a todos; RRHH a empleados y encargados; el encargado solo a empleados de su sucursal. */
+function getManagedEmp(ctx, id) {
+  const e = getEmp(ctx, id), r = ctx.user.role;
+  const ok = r === 'owner' || (r === 'hr' && (e.role === 'employee' || e.role === 'manager')) || (r === 'manager' && e.role === 'employee');
+  if (!ok) throw forbidden('No tenés permiso para gestionar la cuenta de esa persona');
+  return e;
+}
 const checkBranch = (ctx, id) => {
   if (id == null || id === '') return null;
   const b = get('SELECT id FROM branches WHERE id=? AND tenant_id=?', Number(id), ctx.tenant.id);
@@ -227,7 +234,7 @@ route('POST', '/api/owner/employees', A, async (ctx) => {
 });
 
 route('PATCH', '/api/owner/employees/:id', A, (ctx) => {
-  const e = getEmp(ctx, ctx.params.id), b = ctx.body;
+  const e = getManagedEmp(ctx, ctx.params.id), b = ctx.body;
   const v = {
     name: b.name !== undefined ? clean(b.name, 80) : e.name,
     cargo: b.cargo !== undefined ? clean(b.cargo, 60) : e.cargo,
@@ -246,6 +253,7 @@ route('PATCH', '/api/owner/employees/:id', A, (ctx) => {
     emg_rel: b.emg_rel !== undefined ? clean(b.emg_rel, 40) : e.emg_rel,
     emg_phone: b.emg_phone !== undefined ? clean(b.emg_phone, 40) : e.emg_phone,
   };
+  if (managerBranch(ctx) && v.branch_id !== managerBranch(ctx)) throw forbidden('Un encargado no puede mover empleados a otra sucursal');
   if (v.name.length < 2) throw bad('Nombre inválido');
   if (v.birthday && !isoDateOk(v.birthday)) throw bad('Fecha de cumpleaños inválida');
   if (v.hire_date && !isoDateOk(v.hire_date)) throw bad('Fecha de ingreso inválida');
@@ -282,14 +290,14 @@ route('POST', '/api/owner/employees/:id/reject', A, (ctx) => {
   return { ok: true };
 });
 route('POST', '/api/owner/employees/:id/disable', A, (ctx) => {
-  const e = getEmp(ctx, ctx.params.id);
+  const e = getManagedEmp(ctx, ctx.params.id);
   run("UPDATE users SET status='disabled' WHERE id=?", e.id);
   sec.destroyUserSessions(e.id);
   audit(ctx.user.id, ctx.tenant.id, 'employee.disabled', { id: e.id });
   return { ok: true };
 });
 route('POST', '/api/owner/employees/:id/enable', A, (ctx) => {
-  const e = getEmp(ctx, ctx.params.id);
+  const e = getManagedEmp(ctx, ctx.params.id);
   if (e.status === 'active') return { ok: true };
   ensureRoom(ctx);
   run("UPDATE users SET status='active' WHERE id=?", e.id);
@@ -327,7 +335,7 @@ route('POST', '/api/owner/employees/:id/role', A_OWNER, (ctx) => {
 });
 
 route('POST', '/api/owner/employees/:id/reset-password', A, async (ctx) => {
-  const e = getEmp(ctx, ctx.params.id), tmp = tempPassword();
+  const e = getManagedEmp(ctx, ctx.params.id), tmp = tempPassword();
   run('UPDATE users SET pass_hash=?, must_change_pw=1 WHERE id=?', await sec.hashPassword(tmp), e.id);
   sec.destroyUserSessions(e.id);
   audit(ctx.user.id, ctx.tenant.id, 'employee.pw_reset', { id: e.id });
@@ -583,6 +591,8 @@ route('PATCH', '/api/owner/emp-requests/:id', A, (ctx) => {
 });
 
 route('POST', '/api/owner/plan/upgrade', A_OWNER, (ctx) => {
+  // Sin cobro diferencial implementado, el cambio de plan NO puede ser gratis: solo en modo demo/desarrollo.
+  if (!cfg.ALLOW_DEMO_PAYMENTS) throw new HttpError(402, 'PAYMENT_REQUIRED', 'El cambio de plan se gestiona con soporte: escribinos y lo activamos.');
   const tier = String(ctx.body.plan_tier || '');
   if (!['esencial', 'pro', 'completo'].includes(tier)) throw bad('Plan inválido');
   const order = { esencial: 0, pro: 1, completo: 2 };
@@ -1073,6 +1083,8 @@ function empOfTenant(ctx, id) {
   const e = get("SELECT * FROM users WHERE id=? AND role='employee'", Number(id));
   if (!e) throw notFound('Empleado no encontrado');
   if (e.tenant_id !== ctx.tenant.id) throw forbidden('Ese empleado no es de tu negocio');
+  const mb = managerBranch(ctx);
+  if (mb && e.branch_id !== mb) throw forbidden('Ese empleado no es de tu sucursal');
   return e;
 }
 route('POST', '/api/owner/marks/manual', A, (ctx) => {
@@ -1129,6 +1141,10 @@ route('DELETE', '/api/owner/marks/:id', A, (ctx) => {
   const k = get('SELECT * FROM marks WHERE id=?', Number(ctx.params.id));
   if (!k) throw notFound('Esa marca ya no existe');
   if (k.tenant_id !== ctx.tenant.id) throw forbidden('Esa marca no es de tu negocio');
+  if (managerBranch(ctx)) {
+    const ku = get('SELECT branch_id FROM users WHERE id=?', k.user_id);
+    if (!ku || ku.branch_id !== managerBranch(ctx)) throw forbidden('Esa marca no es de tu sucursal');
+  }
   if (k.source !== 'manual') throw bad('Solo se pueden borrar las marcas cargadas a mano. Las del empleado se corrigen cargando la que falta.');
   run('DELETE FROM marks WHERE id=?', k.id);
   audit(ctx.user.id, ctx.tenant.id, 'mark.manual_deleted', { id: k.id, user: k.user_id, kind: k.kind, ts: k.ts });

@@ -1,6 +1,6 @@
 {
   "name": "asistok",
-  "version": "3.1.10",
+  "version": "3.1.11",
   "description": "Asist OK - Control de asistencia SaaS multi-negocio (QR dinámico + geolocalización + Mercado Pago)",
   "private": true,
   "license": "UNLICENSED",

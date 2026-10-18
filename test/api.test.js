@@ -36,7 +36,7 @@ class Client {
 before(async () => {
   PORT = await getPort(); BASE = `http://localhost:${PORT}`;
   child = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
-    env: { ...process.env, DATA_DIR, PORT: String(PORT), APP_URL: BASE, ADMIN_EMAIL: 'root@test.com', ADMIN_PASSWORD: 'SuperClave-12345', ALLOW_DEMO_PAYMENTS: '1', NODE_ENV: 'development' },
+    env: { ...process.env, DATA_DIR, PORT: String(PORT), APP_URL: BASE, ADMIN_EMAIL: 'root@test.com', ADMIN_PASSWORD: 'SuperClave-12345', ALLOW_DEMO_PAYMENTS: '1', REQUIRE_EMAIL_VERIFICATION: '0', NODE_ENV: 'development' },
     stdio: 'ignore',
   });
   for (let i = 0; i < 50; i++) { try { if ((await fetch(BASE + '/healthz')).ok) return; } catch {} await new Promise((r) => setTimeout(r, 150)); }
@@ -47,7 +47,7 @@ after(() => { child?.kill(); fs.rmSync(DATA_DIR, { recursive: true, force: true 
 const state = {};
 async function registerActive(name, email) {
   const c = new Client();
-  let r = await c.post('/api/auth/register', { business: name, email, password: 'Clave-segura-1', plan: 'sub' });
+  let r = await c.post('/api/auth/register', { business: name, email, password: 'Clave-segura-1', plan: 'sub', accept_terms: true, accept_privacy: true });
   assert.equal(r.status, 200, JSON.stringify(r.data));
   r = await c.post('/api/pay/checkout', { kind: 'plan' });
   assert.equal(r.status, 200); assert.ok(r.data.demo);
@@ -59,7 +59,7 @@ async function registerActive(name, email) {
 
 test('registro: queda pendiente de pago y no accede al panel hasta pagar', async () => {
   const c = new Client();
-  let r = await c.post('/api/auth/register', { business: 'Panadería El Sol', email: 'dueno@sol.com', password: 'Clave-segura-1', plan: 'sub', coupon: 'BIENVENIDA20' });
+  let r = await c.post('/api/auth/register', { business: 'Panadería El Sol', email: 'dueno@sol.com', password: 'Clave-segura-1', plan: 'sub', coupon: 'BIENVENIDA20', accept_terms: true, accept_privacy: true });
   assert.equal(r.status, 200);
   assert.equal(r.data.tenant.slug, 'panaderia-el-sol');
   assert.equal(r.data.tenant.status, 'pending_payment');
@@ -80,9 +80,9 @@ test('registro: queda pendiente de pago y no accede al panel hasta pagar', async
 
 test('validaciones de registro: contraseña débil, email duplicado, cupón inválido', async () => {
   const c = new Client();
-  assert.equal((await c.post('/api/auth/register', { business: 'X Negocio', email: 'a@b.co', password: '123' })).status, 400);
-  assert.equal((await c.post('/api/auth/register', { business: 'Otro', email: 'dueno@sol.com', password: 'Clave-segura-1' })).status, 409);
-  assert.equal((await c.post('/api/auth/register', { business: 'Otro', email: 'nuevo@x.com', password: 'Clave-segura-1', coupon: 'NOEXISTE' })).status, 400);
+  assert.equal((await c.post('/api/auth/register', { business: 'X Negocio', email: 'a@b.co', password: '123', accept_terms: true, accept_privacy: true })).status, 400);
+  assert.equal((await c.post('/api/auth/register', { business: 'Otro', email: 'dueno@sol.com', password: 'Clave-segura-1', accept_terms: true, accept_privacy: true })).status, 409);
+  assert.equal((await c.post('/api/auth/register', { business: 'Otro', email: 'nuevo@x.com', password: 'Clave-segura-1', coupon: 'NOEXISTE', accept_terms: true, accept_privacy: true })).status, 400);
 });
 
 test('login: credenciales incorrectas, y bloqueo por demasiados intentos', async () => {
@@ -110,7 +110,7 @@ test('sucursal con geocerca + alta de empleado + cambio obligatorio de contrase�
   assert.equal(r.data.user.must_change_pw, true);
   assert.equal((await e.get('/api/me/state')).data.error, 'MUST_CHANGE_PW');
   assert.equal((await e.post('/api/auth/password', { current: tmp, password: 'corta' })).status, 400);
-  assert.equal((await e.post('/api/auth/password', { current: tmp, password: 'Mi-clave-nueva-9' })).status, 200);
+  assert.equal((await e.post('/api/auth/password', { current: tmp, password: 'Mi-clave-nueva-9', accept_terms: true, accept_privacy: true })).status, 200);
   assert.equal((await e.get('/api/me/state')).status, 200);
   state.emp = e;
 });
@@ -158,6 +158,7 @@ test('horas extra y reporte CSV (con protección contra inyección de fórmulas)
 
 test('permisos: vacaciones limitadas por LCT, aprobación y descuento de días', async () => {
   const e = state.emp, o = state.owner;
+  await o.post('/api/owner/plan/upgrade', { plan_tier: 'pro' }); // permisos y vacaciones son del plan Pro
   let r = await e.get('/api/me/vacation');
   assert.equal(r.data.entitled, 14);
   r = await e.post('/api/me/permits', { type: 'vacaciones', from: '2026-12-01', to: '2026-12-30' });
@@ -183,7 +184,7 @@ test('aislamiento entre negocios (multi-tenant)', async () => {
   await other.post('/api/owner/employees', { name: 'Empleado Taller', email: 'emp@taller.com' }).then(async (r) => {
     const t = new Client();
     await t.post('/api/auth/login', { email: 'emp@taller.com', password: r.data.temp_password });
-    await t.post('/api/auth/password', { current: r.data.temp_password, password: 'Otra-clave-segura-1' });
+    await t.post('/api/auth/password', { current: r.data.temp_password, password: 'Otra-clave-segura-1', accept_terms: true, accept_privacy: true });
     const m = await t.post('/api/me/mark', { action: 'in', code: codeOfSol, lat: -33.2394, lng: -61.6108 });
     assert.equal(m.data.error, 'QR_INVALID');
   });
@@ -260,7 +261,7 @@ test('aumento programado de precios: fecha futura obligatoria y aviso a clientes
   await admin.post('/api/auth/login', { email: 'root@test.com', password: 'SuperClave-12345' });
   assert.equal((await admin.post('/api/admin/prices/schedule', { sub: 52000, once: 420000, extra: 3000, date: '2020-01-01' })).status, 400);
   const d = new Date(Date.now() + 5 * 864e5).toISOString().slice(0, 10);
-  assert.equal((await admin.post('/api/admin/prices/schedule', { sub: 52000, once: 420000, extra: 3000, date: d, notify_days: 15, text: 'Desde {fecha}: $ {sub}' })).status, 200);
+  assert.equal((await admin.post('/api/admin/prices/schedule', { sub: 52000, once: 420000, pro_m: 62000, pro_y: 500000, completo_m: 80000, completo_y: 640000, extra: 3000, date: d, notify_days: 15, text: 'Desde {fecha}: $ {sub}' })).status, 200);
   const cfgRes = (await new Client().get('/api/public/config')).data;
   assert.match(cfgRes.notice, /52\.000/);
   assert.equal(cfgRes.prices.sub, 45000); // todavía rigen los precios actuales
@@ -350,7 +351,7 @@ test('B2: textos legales editables, sanitizados y leídos desde la base', async 
   // semilla con placeholder (Ley 25.326)
   let r = await pub.get('/api/public/legal');
   assert.match(r.data.privacy_html, /25\.326/);
-  assert.match(r.data.terms_html, /<h2>Términos y condiciones<\/h2>/);
+  assert.match(r.data.terms_html, /<h2>Términos y Condiciones de Uso de AsistOK<\/h2>/);
   const admin = new Client();
   await admin.post('/api/auth/login', { email: 'root@test.com', password: 'SuperClave-12345' });
   assert.equal((await new Client().put('/api/admin/site', { legal: {} })).status, 401);
@@ -370,4 +371,26 @@ test('B2: textos legales editables, sanitizados y leídos desde la base', async 
   assert.match((await pub.get('/api/public/legal')).data.privacy_html, /25\.326/);
   // la página pública existe
   assert.equal((await pub.get('/privacidad')).status, 200);
+});
+
+test('jerarquía de cuentas: encargado y RRHH no pueden tomar cuentas de su mismo nivel o superior', async () => {
+  const o = state.owner;
+  const mk = async (email, role) => {
+    let r = await o.post('/api/owner/employees', { name: 'Persona ' + (role || 'empleado'), email });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    const id = r.data.id, tmp = r.data.temp_password;
+    if (role) { r = await o.post(`/api/owner/employees/${id}/role`, { role }); assert.equal(r.status, 200, JSON.stringify(r.data)); }
+    const c = new Client();
+    assert.equal((await c.post('/api/auth/login', { email, password: tmp })).status, 200);
+    assert.equal((await c.post('/api/auth/password', { current: tmp, password: 'Clave-nueva-123', accept_terms: true, accept_privacy: true })).status, 200);
+    return { id, c };
+  };
+  const mgr = await mk('mgr@jer.com', 'manager'), mgr2 = await mk('mgr2@jer.com', 'manager'), hr = await mk('hr@jer.com', 'hr'), emp = await mk('emp@jer.com');
+  const reset = (who, target) => who.c.post(`/api/owner/employees/${target.id}/reset-password`);
+  assert.equal((await reset(mgr, mgr2)).status, 403, 'encargado no puede resetear a otro encargado');
+  assert.equal((await reset(mgr, hr)).status, 403, 'encargado no puede resetear a RRHH');
+  assert.equal((await reset(hr, hr)).status, 403, 'RRHH no puede resetearse a sí mismo por esta vía');
+  assert.equal((await reset(mgr, emp)).status, 200, 'encargado sí gestiona empleados de su sucursal');
+  assert.equal((await reset(hr, mgr2)).status, 200, 'RRHH sí gestiona encargados');
+  assert.equal((await mgr.c.post(`/api/owner/employees/${hr.id}/disable`)).status, 403);
 });

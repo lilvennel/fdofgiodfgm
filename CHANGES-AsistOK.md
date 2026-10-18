@@ -1,5 +1,17 @@
 # Asist OK — cambios sobre AsistOK v3
 
+## v3.1.11 — Correcciones de auditoría
+- **Seguridad (jerarquía de cuentas):** nuevo `getManagedEmp`. Restablecer contraseña, deshabilitar, habilitar y editar una cuenta ahora respeta el rol: el dueño gestiona a todos, RRHH a empleados y encargados, el encargado solo a empleados de su sucursal (y no puede mover empleados a otra sucursal).
+- **Encargado limitado a su sucursal** también en marcas manuales (cargar, ver y borrar) y en la descarga de documentos (`/api/docs/:id/file`).
+- **Cobros:** al terminar un descuento (y en el ajuste masivo de precios) se actualiza la suscripción de Mercado Pago con el precio del plan de cada negocio (`chargeFor`), no con el precio Esencial.
+- **Webhook MP:** sin `MP_WEBHOOK_SECRET` ya no se aceptan notificaciones sin firma cuando el entorno es de producción o usa https.
+- **Marcación:** la lectura de la última marca ocurre dentro de la transacción (sin doble entrada por doble toque); aviso "fuera de zona" como máximo cada 30 min por empleado.
+- **Jobs:** "No llegó" no se genera en feriados; el auto-cierre solo mira marcas de los últimos 7 días (antes recorría toda la tabla cada minuto).
+- **Exportación CSV de empleados:** escapa fórmulas (`=`, `+`, `-`, `@`).
+- **Robustez:** URL o cookie con `%` mal formado ya no da 500; `/api/auth/reset` valida contraseña contra el email descifrado.
+- **Configuración:** se quitaron las variables `BACKUP_S3_*` (no se usaban). El backup off-site usa `BACKUP_UPLOAD_URL` / `BACKUP_UPLOAD_TOKEN`.
+- **Repo:** `.gitignore`, `.dockerignore` y `.env.example`; `data/` ya no se incluye. Tests de registro actualizados (aceptar Términos y Privacidad).
+
 ## v3.1.4 — Legales, ARCO/AAIP y tutorial ampliado
 - **Términos y Política de Privacidad** completos según Ley 25.326, Defensa del Consumidor y uso real del producto (geolocalización, cifrado, Mercado Pago, multi-sucursal).
 - **Exportación de datos**: paquete JSON del negocio (`/api/owner/export/all`), de un empleado (`/api/owner/employees/:id/export`) y del Super Admin por tenant (`/api/admin/tenants/:id/export`) para responder a la AAIP.

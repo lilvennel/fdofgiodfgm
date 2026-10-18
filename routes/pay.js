@@ -96,7 +96,7 @@ async function processMp(topic, id) {
       // Idempotente (H1): si MP repite la notificación, el cobro ya registrado no vuelve a sumar días
       const r = dom.applyRecurringCharge(t.id, String(ap.id ?? id));
       if (r.applied && r.resetPrice) {
-        try { await mp.updatePreapprovalAmount(t.mp_preapproval_id, dom.getPrices().sub); } catch (e) { console.error('[mp] precio', e.message); }
+        try { const fresh = get('SELECT * FROM tenants WHERE id=?', t.id); await mp.updatePreapprovalAmount(t.mp_preapproval_id, dom.chargeFor(fresh, 'plan').amount); } catch (e) { console.error('[mp] precio', e.message); }
       }
     } else if (st === 'rejected' || st === 'cancelled') {
       run("UPDATE tenants SET status='past_due' WHERE id=? AND status='active'", t.id);

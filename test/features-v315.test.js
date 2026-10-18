@@ -35,7 +35,7 @@ before(async () => {
     env: {
       ...process.env, DATA_DIR, PORT: String(PORT), APP_URL: BASE,
       ADMIN_EMAIL: 'root@test.com', ADMIN_PASSWORD: 'SuperClave-12345',
-      ALLOW_DEMO_PAYMENTS: '1', NODE_ENV: 'development', REQUIRE_EMAIL_VERIFICATION: '0',
+      ALLOW_DEMO_PAYMENTS: '1', REQUIRE_EMAIL_VERIFICATION: '0', NODE_ENV: 'development', REQUIRE_EMAIL_VERIFICATION: '0',
     },
     stdio: 'ignore',
   });

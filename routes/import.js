@@ -38,7 +38,8 @@ function normDate(s) {
 }
 
 function csvEscape(v) {
-  const s = String(v ?? '');
+  let s = String(v ?? '');
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; // evita inyección de fórmulas en Excel
   if (/[;"\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
   return s;
 }

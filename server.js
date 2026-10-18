@@ -68,7 +68,7 @@ async function handleApi(req, res, url) {
   for (const r of routes) {
     if (r.method !== method) continue;
     const m = r.re.exec(url.pathname);
-    if (m) { found = r; r.keys.forEach((k, i) => (params[k] = decodeURIComponent(m[i + 1]))); break; }
+    if (m) { found = r; r.keys.forEach((k, i) => { try { params[k] = decodeURIComponent(m[i + 1]); } catch { throw new HttpError(400, 'BAD_URL', 'URL inválida'); } }); break; }
   }
   if (!found) throw new HttpError(404, 'NOT_FOUND', 'Ruta no encontrada');
   const opts = found.opts;
@@ -119,7 +119,8 @@ async function handleApi(req, res, url) {
 }
 
 function serveStatic(req, res, url) {
-  let rel = decodeURIComponent(url.pathname);
+  let rel;
+  try { rel = decodeURIComponent(url.pathname); } catch { return send(res, 400, 'URL inválida'); }
   if (rel === '/' || SPA_PATHS.test(rel)) rel = '/index.html';
   const file = path.normalize(path.join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR + path.sep)) return send(res, 403, 'Prohibido');

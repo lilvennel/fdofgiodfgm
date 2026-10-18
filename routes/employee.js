@@ -156,10 +156,11 @@ route('POST', '/api/me/mark', E, (ctx) => {
     const allowed = branch.radius + Math.min(acc, 25);
     if (dist > allowed) {
       logSec(ctx, 'geo_out', `${dist} m de ${branch.name}`);
+      const recentGeo = !!get("SELECT 1 FROM notifs WHERE user_id=? AND type='geo_out' AND created_at>=?", ctx.user.id, Date.now() - 30 * 60e3); // un aviso cada 30 min
       const geoDetail = `${dist} m de ${branch.name} · rechazado`;
-      run("INSERT INTO notifs(tenant_id,type,user_id,text,detail,created_at) VALUES(?,?,?,?,?,?)",
+      if (!recentGeo) run("INSERT INTO notifs(tenant_id,type,user_id,text,detail,created_at) VALUES(?,?,?,?,?,?)",
         ctx.tenant.id, 'geo_out', ctx.user.id, `Fuera de zona — ${ctx.user.name}`, geoDetail, Date.now());
-      alerts.notifyOwner(ctx.tenant.id, { title: `Fuera de zona — ${ctx.user.name}`, detail: geoDetail });
+      if (!recentGeo) alerts.notifyOwner(ctx.tenant.id, { title: `Fuera de zona — ${ctx.user.name}`, detail: geoDetail });
       throw new HttpError(403, 'GEO_OUT', `Estás a ${dist} m de ${branch.name} y el máximo permitido es ${branch.radius} m. Acercate al local y probá de nuevo; si ya estás adentro, esperá unos segundos a que el GPS mejore.`, { dist });
     }
   } else if (!allowGps && viaQr) {
@@ -169,15 +170,16 @@ route('POST', '/api/me/mark', E, (ctx) => {
     throw bad('Tu empleador deshabilitó el GPS. Escaneá el QR del local para marcar.');
   }
 
-  const m = lastMark(ctx.user.id), on = isOn(m), now = Date.now();
+  const now = Date.now();
   let kind;
+  tx(() => {
+    const m = lastMark(ctx.user.id), on = isOn(m); // dentro de la transacción: evita doble entrada por doble toque
   if (action === 'in') { if (on) throw new HttpError(409, 'ALREADY_IN', 'Ya tenés una entrada abierta. Si terminaste tu jornada, marcá Salida.'); kind = 'in'; }
   else if (action === 'extra') {
     if (!ctx.tenant.allow_extra) throw forbidden('Tu empleador no habilitó las horas extra. Consultalo con él si las necesitás.', 'EXTRA_OFF');
     if (on) throw new HttpError(409, 'ALREADY_IN', 'Todavía tenés una entrada abierta. Marcá Salida antes de empezar horas extra.'); kind = 'xin';
   } else { if (!on) throw new HttpError(409, 'NOT_IN', 'No tenés una entrada abierta. Marcá Entrada primero.'); kind = m.kind === 'xin' ? 'xout' : 'out'; }
 
-  tx(() => {
     run('INSERT INTO marks(tenant_id,user_id,branch_id,kind,ts,lat,lng,accuracy,dist,source) VALUES(?,?,?,?,?,?,?,?,?,?)',
       ctx.tenant.id, ctx.user.id, branch.id, kind, now, Number.isFinite(Number(lat)) ? Number(lat) : null, Number.isFinite(Number(lng)) ? Number(lng) : null, Number(accuracy) || null, dist, viaQr ? 'qr' : 'panel');
     if (kind === 'in') {
@@ -297,6 +299,10 @@ route('GET', '/api/docs/:id/file', { auth: 'user' }, (ctx) => {
   const d = get('SELECT * FROM docs WHERE id=? AND tenant_id=?', Number(ctx.params.id), ctx.user.tenant_id);
   if (!d) throw notFound();
   if (d.user_id !== ctx.user.id && !['owner', 'manager', 'hr', 'superadmin'].includes(ctx.user.role)) throw notFound();
+  if (ctx.user.role === 'manager' && d.user_id !== ctx.user.id) { // el encargado solo ve documentos de su sucursal
+    const du = get('SELECT branch_id FROM users WHERE id=?', d.user_id);
+    if (!du || du.branch_id !== ctx.user.branch_id) throw notFound();
+  }
   const file = path.join(cfg.DATA_DIR, 'uploads', d.path);
   if (!file.startsWith(path.join(cfg.DATA_DIR, 'uploads') + path.sep) || !fs.existsSync(file)) throw notFound('Archivo no disponible');
   return { __file: { buf: fs.readFileSync(file), filename: d.filename, mime: d.mime, inline: true } };

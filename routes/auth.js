@@ -239,7 +239,7 @@ route('POST', '/api/auth/reset', async (ctx) => {
   if (!r || r.expires_at < Date.now()) throw bad('El link venció. Pedí uno nuevo.', 'RESET_EXPIRED');
   const u = get('SELECT * FROM users WHERE id=?', r.user_id);
   if (!u) throw bad('El link venció. Pedí uno nuevo.', 'RESET_EXPIRED');
-  const err = sec.passwordProblem(ctx.body.password, u.email);
+  const err = sec.passwordProblem(ctx.body.password, fc.decryptEmail(u.email) || u.email);
   if (err) throw bad(err);
   // recibir este link en el email prueba que la persona controla esa dirección: queda verificado
   run('UPDATE users SET pass_hash=?, must_change_pw=0, email_verified_at=COALESCE(email_verified_at,?) WHERE id=?', await sec.hashPassword(ctx.body.password), Date.now(), u.id);
