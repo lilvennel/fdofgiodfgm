@@ -20,8 +20,8 @@ route('POST', '/api/pay/checkout', { auth: 'owner', anyStatus: true }, async (ct
   if (kind !== 'plan' && t.status !== 'active') throw new HttpError(402, 'PAYMENT_REQUIRED', 'Primero tenés que activar tu plan');
   if (kind === 'mod_suc' && t.mod_suc) throw bad('Ya tenés este módulo');
   if (kind === 'mod_rec' && t.mod_rec) throw bad('Ya tenés este módulo');
-  // H2: no se cobra ni se activa un negocio cuyo dueño no confirmó su email
-  if (cfg.REQUIRE_EMAIL_VERIFICATION && !ctx.user.email_verified_at) throw new HttpError(403, 'EMAIL_UNVERIFIED', 'Primero confirmá tu email: te enviamos un link. Si no te llegó, pedí otro con el botón “Reenviar email”.');
+  // La verificación para pagar es configurable por separado de la verificación general.
+  if (cfg.REQUIRE_EMAIL_VERIFICATION_FOR_PAYMENT && !ctx.user.email_verified_at) throw new HttpError(403, 'EMAIL_UNVERIFIED', 'Primero confirmá tu email para continuar con el pago.');
   const qty = kind === 'extra' ? intIn(ctx.body.qty, 1, 500, 'Cantidad') : 1;
   if (!mp.enabled() && !cfg.ALLOW_DEMO_PAYMENTS) throw new HttpError(503, 'PAYMENTS_OFF', 'Los pagos todavía no están configurados. Escribinos y lo activamos.');
 

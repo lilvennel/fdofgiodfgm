@@ -106,6 +106,7 @@ route('GET', '/api/public/config', () => ({
   notice: dom.priceNotice(),
   payments: { mp: mp.enabled(), demo: !mp.enabled() && cfg.ALLOW_DEMO_PAYMENTS, provider: 'mercadopago' },
   email_verification: cfg.REQUIRE_EMAIL_VERIFICATION,
+  payment_email_verification: cfg.REQUIRE_EMAIL_VERIFICATION_FOR_PAYMENT,
   app_url: cfg.APP_URL,
 }));
 

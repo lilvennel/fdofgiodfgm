@@ -509,7 +509,7 @@ function paymentScreen(statusMsg) {
     <h2 style="font-size:1.1rem;margin-bottom:4px">Activá tu cuenta</h2>
     <p class="muted mb">${tenant.name}</p>
     ${statusMsg ? html`<div class="alert alert-warn">${statusMsg}</div>` : ''}
-    ${S.cfg.email_verification && !S.me.user.email_verified ? html`<div class="alert alert-warn">Antes de pagar tenés que confirmar tu email: te enviamos un link a ${S.me.user.email}. <button class="link" type="button" data-act="resend-verify">Reenviar email</button></div>` : ''}
+    ${S.cfg.payment_email_verification && !S.me.user.email_verified ? html`<div class="alert alert-warn">Antes de pagar tenés que confirmar tu email: te enviamos un link a ${S.me.user.email}. <button class="link" type="button" data-act="resend-verify">Reenviar email</button></div>` : ''}
     ${tenant.status === 'past_due' ? html`<div class="alert alert-warn">Tu suscripción no está al día. Regularizá el pago para volver a usar el panel.</div>` : ''}
     <div class="summary">
       <div class="summary-row"><span>${tenant.plan === 'once' ? 'Licencia pago único' : 'Suscripción mensual'}</span><span>${money(base)}</span></div>
