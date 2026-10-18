@@ -38,12 +38,19 @@ route('GET', '/api/admin/stats', S, () => {
 
 route('GET', '/api/admin/tenants', S, (ctx) => {
   const st = ctx.query.status;
-  const rows = all(`SELECT t.id,t.slug,t.name,t.plan,t.status,t.created_at,t.paid_until,t.mod_suc,t.mod_rec,t.discount_pct,t.discount_months,t.coupon,
+  const rows = all(`SELECT t.id,t.slug,t.name,t.plan,t.status,t.created_at,t.paid_until,t.mp_preapproval_id,t.mod_suc,t.mod_rec,t.discount_pct,t.discount_months,t.coupon,
       (SELECT email FROM users WHERE tenant_id=t.id AND role='owner' LIMIT 1) owner_email,
       (SELECT COUNT(*) FROM users WHERE tenant_id=t.id AND role='employee' AND status='active') employees
     FROM tenants t ${['active', 'past_due', 'suspended', 'pending_payment'].includes(st) ? 'WHERE t.status=?' : 'WHERE ?=?'} ORDER BY t.id DESC LIMIT 500`,
     ...(['active', 'past_due', 'suspended', 'pending_payment'].includes(st) ? [st] : [1, 1]));
-  return { tenants: rows };
+  const now = Date.now();
+  return {
+    tenants: rows.map((r) => ({
+      ...r,
+      trial: r.status === 'active' && r.paid_until && !r.mp_preapproval_id
+        && r.paid_until > now && (now - (r.created_at || 0)) < 40 * 864e5,
+    })),
+  };
 });
 const getTenant = (id) => { const t = get('SELECT * FROM tenants WHERE id=?', Number(id)); if (!t) throw notFound('Negocio no encontrado'); return t; };
 

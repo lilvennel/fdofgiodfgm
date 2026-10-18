@@ -4,8 +4,8 @@ import { startCheckout } from './app.js';
 
 const O = { tab: 'inicio', showNews: false, period: null, qrBranch: null, qrTimer: null, emps: [], branches: [] };
 const TABS_OWNER = [['inicio', 'Inicio'], ['notif', 'Notif.'], ['solicitudes', 'Solicitudes'], ['empleados', 'Empleados'], ['qr', 'Local'], ['sucursales', 'Sucursales'], ['reportes', 'Reportes'], ['config', 'Config']];
-const TABS_MANAGER = [['inicio', 'Inicio'], ['notif', 'Notif.'], ['solicitudes', 'Permisos'], ['empleados', 'Mi equipo'], ['reportes', 'Reportes']];
-const TABS_HR = [['inicio', 'Inicio'], ['notif', 'Notif.'], ['solicitudes', 'Solicitudes'], ['empleados', 'Empleados'], ['reportes', 'Reportes']];
+const TABS_MANAGER = [['inicio', 'Inicio'], ['notif', 'Notif.'], ['solicitudes', 'Permisos'], ['empleados', 'Mi equipo'], ['mi-marcar', 'Marcar'], ['mi-permisos', 'Mis pedidos'], ['reportes', 'Reportes']];
+const TABS_HR = [['inicio', 'Inicio'], ['notif', 'Notif.'], ['solicitudes', 'Solicitudes'], ['empleados', 'Empleados'], ['mi-marcar', 'Marcar'], ['mi-permisos', 'Mis pedidos'], ['reportes', 'Reportes']];
 const tabsFor = () => {
   const r = S.me?.user?.role;
   if (r === 'manager') return TABS_MANAGER;
@@ -35,8 +35,9 @@ export async function renderOwner() {
     <button class="btn btn-sm btn-outline" data-act="logout" type="button">Cerrar sesión</button></header>
   <main class="dash-body">
     ${S.cfg.email_verification && !S.me.user.email_verified ? html`<div class="alert alert-warn row between"><span>✉️ Confirmá tu email: te enviamos un link a ${S.me.user.email}.</span><button class="link" type="button" data-act="resend-verify">Reenviar email</button></div>` : ''}
-    ${isManager() ? html`<div class="alert alert-info" style="background:#ecfeff;border-color:#a5f3fc;color:#155e75">👤 <strong>Modo encargado</strong> · Ves solo tu sucursal: equipo, tardanzas, marcas y permisos. No gestionás pagos ni la configuración general.</div>` : ''}
-    ${isHr() ? html`<div class="alert alert-info" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534">👥 <strong>Modo RRHH</strong> · Ves asistencia, tardanzas y permisos de todo el negocio. No gestionás pagos ni la configuración general.</div>` : ''}
+    ${isManager() ? html`<div class="alert alert-info" style="background:#ecfeff;border-color:#a5f3fc;color:#155e75">👤 <strong>Modo encargado</strong> · Ves tu sucursal (equipo, permisos, reportes). También podés <strong>marcar asistencia</strong> y pedir permisos; tus pedidos los autoriza RRHH o el dueño. No gestionás pagos ni la config general.</div>` : ''}
+    ${isHr() ? html`<div class="alert alert-info" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534">👥 <strong>Modo RRHH</strong> · Ves asistencia y permisos de todo el negocio (autorizás empleados y encargados). También podés <strong>marcar</strong> y pedir permisos; tus pedidos los autoriza el dueño. No gestionás pagos ni la config general.</div>` : ''}
+    ${!isStaffOnly() && tenant.trial && tenant.trial_until ? html`<div class="alert alert-info" style="background:#fff7ed;border-color:#fed7aa;color:#9a3412">🎁 <strong>Periodo de prueba</strong> · Tenés acceso completo hasta el <strong>${new Date(tenant.trial_until).toLocaleDateString('es-AR')}</strong> (30 días). Después activá un plan en Config para no perder el acceso.</div>` : ''}
     ${!isStaffOnly() && notice ? html`<div class="alert alert-warn">📈 ${notice}</div>` : ''}
     ${!isStaffOnly() && ob && ob.dismissed && !ob.all_done ? html`<div class="alert alert-warn row between"><span>🧭 Te faltan ${ob.total - ob.completed} paso(s) para dejar todo listo.</span><button class="link" type="button" data-act="ob-reopen">Ver checklist</button></div>` : ''}
     <div class="tabs" role="tablist">${tabsFor().map(([k, l]) => html`<button class="tab ${O.tab === k ? 'active' : ''}" data-act="o-tab" data-tab="${k}" type="button">${l}${k === 'notif' ? html` <span id="notif-count" class="pending-badge hidden"></span>` : ''}</button>`)}</div>
@@ -73,7 +74,7 @@ function newsBlock(news) {
 
 async function loadTab() {
   clearInterval(O.qrTimer);
-  const tabs = { inicio: tabInicio, notif: tabNotif, solicitudes: tabSolicitudes, empleados: tabEmpleados, qr: tabQr, sucursales: tabSucursales, reportes: tabReportes, config: tabConfig };
+  const tabs = { inicio: tabInicio, notif: tabNotif, solicitudes: tabSolicitudes, empleados: tabEmpleados, qr: tabQr, sucursales: tabSucursales, reportes: tabReportes, config: tabConfig, 'mi-marcar': tabMiMarcar, 'mi-permisos': tabMiPermisos };
   const fn = tabs[O.tab] || tabInicio;
   try {
     await fn();
@@ -1019,3 +1020,88 @@ acts['upgrade-plan'] = async (el) => {
     } else toast(e.message || 'No se pudo actualizar');
   }
 };
+
+
+// ---------- Mi asistencia (encargado / RRHH también marcan y piden) ----------
+async function tabMiMarcar() {
+  const st = await get('/api/me/state');
+  const on = st.on;
+  const allowExtra = S.me.tenant.allow_extra !== 0 && S.me.tenant.allow_extra !== false;
+  patchEl('#tab-body', html`<div class="card">
+    <strong>📱 Marcar asistencia</strong>
+    <p class="muted mt">Como ${isHr() ? 'RRHH' : 'encargado'} también registrás tu propia jornada (GPS / QR según la config del negocio).</p>
+    <div class="mt" style="text-align:center;padding:12px 0">
+      <div style="font-size:2.5rem">${on ? (st.extra ? '⏱️' : '🟢') : '⚪'}</div>
+      <div style="font-weight:700;margin-top:8px">${on ? (st.extra ? 'En horas extra' : 'En jornada') : 'Fuera de jornada'}</div>
+      ${st.since ? html`<div class="muted" style="margin-top:4px">Desde ${new Date(st.since).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</div>` : ''}
+    </div>
+    <div class="row" style="gap:8px;flex-wrap:wrap;justify-content:center;margin-top:12px">
+      ${!on ? html`<button class="btn btn-primary" data-act="staff-mark" data-action="in" type="button">Entrada</button>` : html`<button class="btn btn-primary" data-act="staff-mark" data-action="out" type="button">Salida</button>`}
+      ${on && allowExtra && !st.extra ? html`<button class="btn btn-outline" data-act="staff-mark" data-action="extra" type="button">Pasar a extra</button>` : ''}
+    </div>
+    ${st.today?.length ? html`<div class="mt"><strong style="font-size:.85rem">Hoy</strong>
+      <ul class="muted" style="margin:8px 0 0 18px;line-height:1.6">${st.today.map((m) => html`<li>${m.kind === 'in' ? 'Entrada' : m.kind === 'out' ? 'Salida' : m.kind === 'xin' ? 'Extra in' : m.kind === 'extra' || m.kind === 'xout' ? 'Extra out' : m.kind} · ${new Date(m.ts).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}${m.auto ? ' (auto)' : ''}</li>`)}</ul>
+    </div>` : ''}
+  </div>`);
+}
+
+acts['staff-mark'] = async (el) => {
+  const action = el.dataset.action;
+  let body = { action };
+  // Intentar GPS si el navegador lo permite
+  try {
+    const pos = await new Promise((resolve, reject) => {
+      if (!navigator.geolocation) return reject(new Error('no geo'));
+      navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 });
+    });
+    body.lat = pos.coords.latitude;
+    body.lng = pos.coords.longitude;
+    body.accuracy = pos.coords.accuracy;
+  } catch (_) { /* el backend dirá si hace falta GPS */ }
+  try {
+    await post('/api/me/mark', body);
+    toast(action === 'in' ? 'Entrada registrada' : action === 'out' ? 'Salida registrada' : 'Pasaste a horas extra');
+    loadTab();
+  } catch (e) {
+    toast(e.message || 'No se pudo marcar', true);
+  }
+};
+
+async function tabMiPermisos() {
+  const [{ permits }, vac] = await Promise.all([
+    get('/api/me/permits'),
+    get('/api/me/vacation').catch(() => null),
+  ]);
+  const types = [
+    ['dia', 'Día libre'], ['vacaciones', 'Vacaciones'], ['maternidad', 'Maternidad'],
+    ['paternidad', 'Paternidad'], ['casamiento', 'Casamiento'], ['fallecimiento', 'Fallecimiento'],
+    ['examen', 'Examen'], ['otro', 'Otro'],
+  ];
+  const who = isHr() ? 'el dueño' : 'RRHH o el dueño';
+  patchEl('#tab-body', html`<div class="card">
+    <strong>📅 Mis permisos y licencias</strong>
+    <p class="muted mt">Tus pedidos los autoriza <strong>${who}</strong>.</p>
+    ${vac ? html`<p class="muted" style="font-size:.85rem">Vacaciones: ${vac.available} día(s) disponible(s) de ${vac.entitled} (usados ${vac.used}${vac.pending ? ', pendientes ' + vac.pending : ''}).</p>` : ''}
+    <form data-form="staff-permit" class="mt">
+      <div class="form-group"><label>Tipo</label><select name="type" required>${types.map(([v, l]) => html`<option value="${v}">${l}</option>`)}</select></div>
+      <div class="form-group"><label>Desde</label><input type="date" name="from" required></div>
+      <div class="form-group"><label>Hasta (mismo día si es “Día libre”)</label><input type="date" name="to"></div>
+      <div class="form-group"><label>Nota</label><textarea name="note" rows="2" placeholder="Opcional"></textarea></div>
+      <button class="btn btn-primary btn-block" type="submit">Enviar pedido</button>
+    </form>
+  </div>
+  <div class="card mt"><strong>Historial</strong>
+    ${permits.length ? permits.map((p) => html`<div class="hours-emp-row" style="display:block;margin-bottom:8px">
+      <div style="font-weight:600;font-size:.88rem">${p.type} · ${p.from_date}${p.to_date && p.to_date !== p.from_date ? ' → ' + p.to_date : ''}</div>
+      <div class="muted">${p.status === 'pending' ? 'Pendiente de autorización' : p.status === 'approved' ? 'Aprobado' : 'Rechazado'}${p.note ? ' · ' + p.note : ''}</div>
+    </div>`) : html`<p class="muted">Todavía no pediste permisos.</p>`}
+  </div>`);
+}
+
+forms['staff-permit'] = async (v) => {
+  const body = { type: v.type, from: v.from, to: v.to || v.from, note: v.note || '' };
+  await post('/api/me/permits', body);
+  toast('Pedido enviado');
+  loadTab();
+};
+

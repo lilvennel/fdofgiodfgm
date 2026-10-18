@@ -88,10 +88,10 @@ async function load() { try { await ({ cuentas, sitio, precios, cupones, pagos: 
 async function cuentas() {
   const { tenants } = await get('/api/admin/tenants' + (A.filter === 'all' ? '' : '?status=' + A.filter));
   patchEl('#a-body', html`<div class="sa-filter">${[['all', 'Todas'], ['active', 'Activas'], ['past_due', 'Pago vencido'], ['pending_payment', 'Sin pagar'], ['suspended', 'Suspendidas']].map(([k, l]) => html`<button class="${A.filter === k ? 'active' : ''}" data-act="a-filter" data-f="${k}" type="button">${l}</button>`)}</div>
-  ${tenants.length ? tenants.map((t) => html`<div class="account-card"><div><div style="font-weight:700">${t.name}</div>
+  ${tenants.length ? tenants.map((t) => html`<div class="account-card"><div class="row" style="gap:10px;align-items:flex-start"><div class="brand-mark brand-mark-logo" style="flex-shrink:0" title="AsistOK"></div><div class="grow"><div style="font-weight:700">${t.name}</div>
     <div class="account-meta">/${t.slug} · ${t.owner_email} · ${t.plan === 'once' ? 'Pago único' : 'Suscripción'} · ${t.employees} emp.${t.mod_suc ? ' · Multi-sucursal' : ''}${t.mod_rec ? ' · Recibos' : ''}</div>
-    <div class="account-meta">Alta ${fmtDateTime(t.created_at)}${t.paid_until ? ' · paga hasta ' + new Date(t.paid_until).toLocaleDateString('es-AR') : ''}${t.discount_pct ? ` · ${t.discount_pct}% OFF (${t.discount_months} m)` : ''}</div>
-    <div style="margin-top:6px">${badge(t.status)}</div></div>
+    <div class="account-meta">Alta ${fmtDateTime(t.created_at)}${t.paid_until ? ' · hasta ' + new Date(t.paid_until).toLocaleDateString('es-AR') : ''}${t.trial ? ' · 🎁 prueba' : ''}${t.discount_pct ? ` · ${t.discount_pct}% OFF (${t.discount_months} m)` : ''}</div>
+    <div style="margin-top:6px">${badge(t.status)}${t.trial ? html` <span class="pill" style="font-size:.7rem;background:#ffedd5;color:#9a3412">Prueba 30 días</span>` : ''}</div></div></div>
     <div class="account-actions">${t.status === 'suspended' || t.status === 'pending_payment' || t.status === 'past_due' ? html`<button class="btn btn-primary btn-sm" data-act="a-status" data-id="${t.id}" data-s="active" type="button">Activar</button>` : html`<button class="btn btn-outline btn-sm" data-act="a-status" data-id="${t.id}" data-s="suspended" type="button">Suspender</button>`}
     <button class="btn btn-outline btn-sm" data-act="a-disc" data-id="${t.id}" data-name="${t.name}" type="button">Descuento</button>
     <button class="btn btn-outline btn-sm" data-act="a-pw" data-id="${t.id}" type="button">Reset clave</button>

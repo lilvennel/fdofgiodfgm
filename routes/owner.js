@@ -21,6 +21,23 @@ const managerBranch = (ctx) => (ctx.user.role === 'manager' ? ctx.user.branch_id
 /** RRHH ve todo el negocio (como dueño en operación) pero sin pagos/config sensible */
 const isStaffAdmin = (ctx) => ctx.user.role === 'owner' || ctx.user.role === 'hr';
 
+/** Quién puede autorizar pedidos del solicitante según rol:
+ *  empleado → encargado (su sucursal) / RRHH / dueño
+ *  encargado → RRHH / dueño
+ *  RRHH → solo dueño
+ */
+function canDecideFor(decider, requester) {
+  if (!requester) return false;
+  if (decider.role === 'owner') return true;
+  if (decider.id === requester.id) return false; // nadie se aprueba a sí mismo
+  if (requester.role === 'hr') return false; // solo dueño
+  if (requester.role === 'manager') return decider.role === 'hr';
+  // empleado común
+  if (decider.role === 'hr') return true;
+  if (decider.role === 'manager') return requester.branch_id === decider.branch_id;
+  return false;
+}
+
 
 const EMP_COLS = 'id,name,email,role,cargo,branch_id,status,phone,address,birthday,hire_date,shift_start,emg_name,emg_rel,emg_phone,dni,personal_email,blood_type,obra_social,notes,must_change_pw,created_at,last_login';
 
@@ -376,19 +393,25 @@ route('POST', '/api/owner/notifs/:id/resolve', A, (ctx) => {
 });
 route('GET', '/api/owner/permits', A, (ctx) => {
   const mb = managerBranch(ctx);
-  const permits = mb
-    ? all(`SELECT p.*, u.name employee FROM permits p JOIN users u ON u.id=p.user_id WHERE p.tenant_id=? AND u.branch_id=? ORDER BY (p.status='pending') DESC, p.id DESC LIMIT 100`, ctx.tenant.id, mb)
-    : all(`SELECT p.*, u.name employee FROM permits p JOIN users u ON u.id=p.user_id WHERE p.tenant_id=? ORDER BY (p.status='pending') DESC, p.id DESC LIMIT 100`, ctx.tenant.id);
+  let permits = mb
+    ? all(`SELECT p.*, u.name employee, u.role user_role, u.branch_id user_branch FROM permits p JOIN users u ON u.id=p.user_id WHERE p.tenant_id=? AND u.branch_id=? ORDER BY (p.status='pending') DESC, p.id DESC LIMIT 100`, ctx.tenant.id, mb)
+    : all(`SELECT p.*, u.name employee, u.role user_role, u.branch_id user_branch FROM permits p JOIN users u ON u.id=p.user_id WHERE p.tenant_id=? ORDER BY (p.status='pending') DESC, p.id DESC LIMIT 100`, ctx.tenant.id);
+  permits = permits.filter((p) => canDecideFor(ctx.user, { id: p.user_id, role: p.user_role, branch_id: p.user_branch }));
   return { permits };
 });
 route('POST', '/api/owner/permits/:id/decide', A, (ctx) => {
   const p = get('SELECT * FROM permits WHERE id=? AND tenant_id=?', Number(ctx.params.id), ctx.tenant.id);
   if (!p) throw notFound();
   if (p.status !== 'pending') throw bad('Esta solicitud ya fue resuelta');
+  const requester = get('SELECT id,role,branch_id,name FROM users WHERE id=?', p.user_id);
+  if (!canDecideFor(ctx.user, requester)) {
+    if (requester?.role === 'hr') throw forbidden('Los pedidos de RRHH solo los autoriza el dueño');
+    if (requester?.role === 'manager') throw forbidden('Los pedidos del encargado solo los autoriza RRHH o el dueño');
+    throw forbidden('No podés autorizar este pedido');
+  }
   const mb = managerBranch(ctx);
   if (mb) {
-    const u = get('SELECT branch_id FROM users WHERE id=?', p.user_id);
-    if (!u || u.branch_id !== mb) throw forbidden('Ese permiso no es de tu sucursal');
+    if (!requester || requester.branch_id !== mb) throw forbidden('Ese permiso no es de tu sucursal');
   }
   const ok = ctx.body.approve === true;
   tx(() => {
@@ -513,21 +536,29 @@ route('GET', '/api/owner/emp-requests', A, (ctx) => {
   let rows;
   if (status === 'all') {
     rows = all(`SELECT r.id,r.kind,r.subject,r.body,r.status,r.reply,r.created_at,r.updated_at,
-      u.name AS employee, u.id AS user_id
+      u.name AS employee, u.id AS user_id, u.role AS user_role, u.branch_id
       FROM emp_requests r JOIN users u ON u.id=r.user_id
       WHERE r.tenant_id=? ORDER BY r.id DESC LIMIT 100`, ctx.tenant.id);
   } else {
     rows = all(`SELECT r.id,r.kind,r.subject,r.body,r.status,r.reply,r.created_at,r.updated_at,
-      u.name AS employee, u.id AS user_id
+      u.name AS employee, u.id AS user_id, u.role AS user_role, u.branch_id
       FROM emp_requests r JOIN users u ON u.id=r.user_id
       WHERE r.tenant_id=? AND r.status=? ORDER BY r.id DESC LIMIT 100`, ctx.tenant.id, status);
   }
+  // Cadena de autorización: encargado no ve pedidos de encargado/RRHH; RRHH no ve de RRHH
+  rows = rows.filter((r) => canDecideFor(ctx.user, { id: r.user_id, role: r.user_role, branch_id: r.branch_id }));
   return { requests: rows };
 });
 route('PATCH', '/api/owner/emp-requests/:id', A, (ctx) => {
   const id = Number(ctx.params.id);
   const r = get('SELECT * FROM emp_requests WHERE id=? AND tenant_id=?', id, ctx.tenant.id);
   if (!r) throw notFound();
+  const requester = get('SELECT id,role,branch_id FROM users WHERE id=?', r.user_id);
+  if (!canDecideFor(ctx.user, requester)) {
+    if (requester?.role === 'hr') throw forbidden('Las solicitudes de RRHH solo las responde el dueño');
+    if (requester?.role === 'manager') throw forbidden('Las solicitudes del encargado solo las responde RRHH o el dueño');
+    throw forbidden('No podés responder esta solicitud');
+  }
   if (r.status !== 'pending' && ctx.body.status && ctx.body.status !== r.status) {
     // permitir re-editar respuesta, pero no volver a pending
   }
@@ -536,12 +567,10 @@ route('PATCH', '/api/owner/emp-requests/:id', A, (ctx) => {
   const now = Date.now();
   run('UPDATE emp_requests SET status=?, reply=?, updated_at=? WHERE id=?', status, reply || null, now, id);
   audit(ctx.user.id, ctx.tenant.id, 'emp_request.' + status, { id });
-  // Deja de aparecer como "pendiente / responder" en Notificaciones del dueño
   if (status !== 'pending') {
     run("UPDATE notifs SET resolved_at=?, read_at=COALESCE(read_at,?) WHERE tenant_id=? AND type='emp_request' AND ref_id=? AND resolved_at IS NULL",
       now, now, ctx.tenant.id, id);
   }
-  // Aviso al empleado (su panel / notifs)
   if (status === 'answered' || status === 'rejected') {
     try {
       run("INSERT INTO notifs(tenant_id,type,user_id,ref_id,text,detail,created_at) VALUES(?,?,?,?,?,?,?)",

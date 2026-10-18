@@ -14,7 +14,7 @@ const { saveFile } = require('./owner');
 
 const { haversine } = require('../lib/geo');
 
-const E = { auth: 'employee' };
+const E = { auth: ['employee', 'manager', 'hr'] }; // también encargado y RRHH marcan y piden permisos
 
 function logSec(ctx, kind, detail) {
   run('INSERT INTO security_events(tenant_id,user_id,kind,detail,ts) VALUES(?,?,?,?,?)', ctx.tenant.id, ctx.user.id, kind, detail || null, Date.now());
@@ -266,7 +266,7 @@ route('GET', '/api/me/docs', E, (ctx) => {
     recibos: dom.planFeatures(ctx.tenant).recibos ? all(`SELECT ${cols} FROM docs WHERE user_id=? AND kind='recibo' ORDER BY period DESC`, ctx.user.id) : null,
   };
 });
-route('POST', '/api/me/certs', { auth: 'employee', limit: 8 * 1024 * 1024 }, (ctx) => {
+route('POST', '/api/me/certs', { auth: ['employee', 'manager', 'hr'], limit: 8 * 1024 * 1024 }, (ctx) => {
   rateLimit('cert:' + ctx.user.id, 10, 3600e3);
   const types = { medico: 'Certificado médico', estudio: 'Estudio / examen', dni: 'DNI / documentación', otro: 'Otro' };
   const ct = types[ctx.body.cert_type] ? ctx.body.cert_type : 'otro';
@@ -295,7 +295,8 @@ route('POST', '/api/me/docs/:id/sign', E, (ctx) => {
 // Descarga autenticada (dueño del negocio o el empleado titular)
 route('GET', '/api/docs/:id/file', { auth: 'user' }, (ctx) => {
   const d = get('SELECT * FROM docs WHERE id=? AND tenant_id=?', Number(ctx.params.id), ctx.user.tenant_id);
-  if (!d || (ctx.user.role === 'employee' && d.user_id !== ctx.user.id)) throw notFound();
+  if (!d) throw notFound();
+  if (d.user_id !== ctx.user.id && !['owner', 'manager', 'hr', 'superadmin'].includes(ctx.user.role)) throw notFound();
   const file = path.join(cfg.DATA_DIR, 'uploads', d.path);
   if (!file.startsWith(path.join(cfg.DATA_DIR, 'uploads') + path.sep) || !fs.existsSync(file)) throw notFound('Archivo no disponible');
   return { __file: { buf: fs.readFileSync(file), filename: d.filename, mime: d.mime, inline: true } };
@@ -304,7 +305,8 @@ route('GET', '/api/docs/:id/file', { auth: 'user' }, (ctx) => {
 // Firma del empleador para mostrarla en un recibo (dueño del negocio o empleado titular del recibo)
 route('GET', '/api/docs/:id/sign', { auth: 'user' }, (ctx) => {
   const d = get("SELECT id,user_id FROM docs WHERE id=? AND tenant_id=? AND kind='recibo'", Number(ctx.params.id), ctx.user.tenant_id);
-  if (!d || (ctx.user.role === 'employee' && d.user_id !== ctx.user.id)) throw notFound();
+  if (!d) throw notFound();
+  if (d.user_id !== ctx.user.id && !['owner', 'manager', 'hr', 'superadmin'].includes(ctx.user.role)) throw notFound();
   const row = get('SELECT sign_path FROM tenants WHERE id=?', ctx.user.tenant_id);
   if (!row || !row.sign_path) throw notFound('Sin firma cargada');
   const base = path.join(cfg.DATA_DIR, 'uploads');
