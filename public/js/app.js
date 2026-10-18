@@ -154,7 +154,7 @@ export async function showAuth(message, opts = {}) {
         </nav>
         <div class="nav-actions">
           <button class="btn btn-outline" type="button" data-act="scroll-login">Iniciar sesión</button>
-          <button class="btn btn-primary" type="button" data-act="auth-tab" data-tab="reg">Probar ahora</button>
+          <button class="btn btn-primary" type="button" data-act="go-register">Probar ahora</button>
         </div>
       </div>
     </header>
@@ -166,7 +166,8 @@ export async function showAuth(message, opts = {}) {
           <h1 style="margin-top:14px">Dejá la planilla.<br>Controlá quién está<br><span class="h1-last">y <span id="tw-text" class="tw-inline">recuperá tiempo</span><span class="tw-dots" aria-hidden="true">...</span></span></h1>
           <p>AsistOK es el control de asistencia online para tu negocio: marcación simple desde el celular, ubicación del local, horas y extras claras. Fácil desde el primer día.</p>
           <div class="hero-cta">
-            <button class="btn btn-primary" type="button" data-act="auth-tab" data-tab="reg">Ver planes / registrarse</button>
+            <button class="btn btn-primary" type="button" data-act="go-pricing">Ver planes</button>
+            <button class="btn btn-outline" type="button" data-act="go-register">Registrarse</button>
             <a class="btn btn-outline" href="#producto">Cómo funciona</a>
           </div>
           <div class="stats">
@@ -221,12 +222,12 @@ export async function showAuth(message, opts = {}) {
         <h2>Todo lo que necesitás, sin complicaciones</h2>
         <p class="lead">Marcación, horas, permisos y reportes en un solo lugar. Pensado para el local real.</p>
         <div class="grid-3">
-          <article class="feat-card"><div class="feat-icon">📱</div><h3 style="margin-bottom:8px">Marcación simple</h3><p class="muted">Desde el celular, con ubicación del local. Sin escanear si no querés.</p></article>
-          <article class="feat-card"><div class="feat-icon">⏱</div><h3 style="margin-bottom:8px">Horas y extras</h3><p class="muted">Normales, extras y feriados. Reportes listos para Excel.</p></article>
-          <article class="feat-card"><div class="feat-icon">🔔</div><h3 style="margin-bottom:8px">Avisos al dueño</h3><p class="muted">Llegó tarde, no marcó salida o intento fuera de zona.</p></article>
-          <article class="feat-card"><div class="feat-icon">🗂</div><h3 style="margin-bottom:8px">Permisos y recibos</h3><p class="muted">Día libre, vacaciones y firma de recibos en PDF.</p></article>
-          <article class="feat-card"><div class="feat-icon">🏢</div><h3 style="margin-bottom:8px">Multi-sucursal</h3><p class="muted">Cada local con su ubicación, QR y empleados.</p></article>
-          <article class="feat-card"><div class="feat-icon">💳</div><h3 style="margin-bottom:8px">Mercado Pago</h3><p class="muted">Suscripción o pago único. Activás y listo.</p></article>
+          <article class="feat-card"><div class="feat-icon feat-icon--mark" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="2"/><circle cx="12" cy="18" r="1"/></svg></div><h3 style="margin-bottom:8px">Marcación simple</h3><p class="muted">Desde el celular, con ubicación del local. Sin escanear si no querés.</p></article>
+          <article class="feat-card"><div class="feat-icon feat-icon--clock" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><h3 style="margin-bottom:8px">Horas y extras</h3><p class="muted">Normales, extras y feriados. Reportes listos para Excel.</p></article>
+          <article class="feat-card"><div class="feat-icon feat-icon--bell" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 0 0 4 0"/></svg></div><h3 style="margin-bottom:8px">Avisos al dueño</h3><p class="muted">Llegó tarde, no marcó salida o intento fuera de zona.</p></article>
+          <article class="feat-card"><div class="feat-icon feat-icon--leave" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 7V3m8 4V3M3 11h18M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/><path d="M9 15l2 2 4-4"/></svg></div><h3 style="margin-bottom:8px">Permisos y vacaciones</h3><p class="muted">Pedidos de día libre o vacaciones, con aprobación del dueño o RRHH. Recibos PDF en el plan Completo.</p></article>
+          <article class="feat-card"><div class="feat-icon feat-icon--shop" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l1-4h16l1 4"/><path d="M4 9h16v11H4z"/><path d="M9 22V12h6v10"/></svg></div><h3 style="margin-bottom:8px">Multi-sucursal</h3><p class="muted">Cada local con su ubicación, QR y empleados (plan Completo).</p></article>
+          <article class="feat-card"><div class="feat-icon feat-icon--pay" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></div><h3 style="margin-bottom:8px">Mercado Pago</h3><p class="muted">Suscripción o pago único. Activás y listo.</p></article>
         </div>
       </div>
     </section>
@@ -335,7 +336,7 @@ export async function showAuth(message, opts = {}) {
             <div class="sav-row"><span>Avisos de tarde y faltas</span><span class="sav-old" id="sav-o3">25 min</span><span class="sav-new" id="sav-n3">2 min</span></div>
           </div>
           <p class="muted" style="font-size:.78rem;margin-top:10px">Tiempo por día, a mano vs. con AsistOK. Estimación orientativa.</p>
-          <button class="btn btn-primary btn-block mt" type="button" data-act="auth-tab" data-tab="reg">Recuperar mi tiempo</button>
+          <button class="btn btn-primary btn-block mt" type="button" data-act="go-register">Recuperar mi tiempo</button>
         </div>
       </div>
     </section>
@@ -353,7 +354,7 @@ export async function showAuth(message, opts = {}) {
         <span class="tag">04 · Dudas</span>
         <h2>Preguntas frecuentes</h2>
         <p class="lead">Si no está acá, escribinos por WhatsApp.</p>
-        <details open><summary>¿Necesito instalar una app de la tienda?</summary><p>No. Funciona en el navegador del celular o la compu. Podés “Agregar a inicio” para tener un ícono, pero sigue siendo web.</p></details>
+        <details><summary>¿Necesito instalar una app de la tienda?</summary><p>No. Funciona en el navegador del celular o la compu. Podés “Agregar a inicio” para tener un ícono, pero sigue siendo web.</p></details>
         <details><summary>¿Hace falta un QR en la puerta?</summary><p>No es obligatorio. El empleado puede marcar desde su panel con la ubicación activada. El QR es opcional si preferís control en la entrada o una pantalla fija.</p></details>
         <details><summary>¿Qué pasa si marca desde la casa?</summary><p>Configurás el punto del local una vez. Si intentan marcar lejos, el sistema rechaza el intento y te llega un aviso de seguridad.</p></details>
         <details><summary>¿Cómo sé si alguien llegó tarde?</summary><p>En Config cargás la hora de entrada del turno y los minutos de tolerancia. Si marcan después de eso, te llega la notificación. No inicia la jornada sola: solo avisa.</p></details>
@@ -417,10 +418,17 @@ function startHero() {
 }
 acts['auth-tab'] = async (el) => {
   authTab = el.dataset.tab || 'login';
-  const y = window.scrollY;
-  await showAuth(undefined, { skipCfg: true }); // pestaña: no hace falta re-pedir config
-  window.scrollTo(0, y);
-  requestAnimationFrame(() => window.scrollTo(0, y));
+  await showAuth(undefined, { skipCfg: true });
+  // Las pestañas del form están abajo: sin scroll parece que el botón no hace nada
+  setTimeout(() => document.getElementById('login')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 40);
+};
+acts['go-register'] = async () => {
+  authTab = 'reg';
+  await showAuth(undefined, { skipCfg: true });
+  setTimeout(() => document.getElementById('login')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 40);
+};
+acts['go-pricing'] = () => {
+  document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 acts['bill-mode'] = (el) => {
   const mode = el.dataset.mode;
@@ -623,20 +631,47 @@ async function statusPage() {
   let h = { ok: false };
   try { h = await get('/api/health'); } catch (e) { h = { ok: false, error: e.message }; }
   const ok = !!h.ok;
-  render(html`<main class="dash-body" style="max-width:520px;margin:40px auto">
-    <a href="/" class="btn btn-outline btn-sm mb">← Volver</a>
-    <div class="card" style="text-align:center">
-      <div style="font-size:2.5rem;margin-bottom:8px">${ok ? '✅' : '⚠️'}</div>
-      <h1 style="font-size:1.3rem;margin-bottom:6px">Estado de AsistOK</h1>
-      <p class="muted mb">${ok ? 'El servicio está operativo.' : 'Hay un problema con el servicio o la base de datos.'}</p>
-      <div style="text-align:left;font-size:.88rem;line-height:1.6">
-        <div class="row between"><span>API / base de datos</span><strong>${h.db === 'up' ? 'OK' : 'Error'}</strong></div>
-        <div class="row between"><span>Emails (Resend)</span><strong>${h.mail ? 'Configurado' : 'No configurado'}</strong></div>
-        <div class="row between"><span>Mercado Pago</span><strong>${h.mp ? 'Configurado' : 'No configurado'}</strong></div>
-        <div class="row between"><span>CAPTCHA</span><strong>${h.turnstile ? 'Activo' : 'Opcional / off'}</strong></div>
-        <div class="row between"><span>Último backup</span><strong>${h.backup?.at ? new Date(h.backup.at).toLocaleString('es-AR') : '—'}</strong></div>
-        <div class="row between"><span>Hora servidor</span><strong>${h.time ? new Date(h.time).toLocaleString('es-AR') : '—'}</strong></div>
+  const row = (label, status, detail) => html`<div class="st-row">
+    <div class="st-row__label">${label}</div>
+    <div class="st-row__right"><span class="st-pill st-pill--${status}">${status === 'ok' ? 'Operativo' : status === 'warn' ? 'Parcial' : 'Caído'}</span>
+    ${detail ? html`<span class="st-detail">${detail}</span>` : ''}</div>
+  </div>`;
+  // Componentes reales del producto (honestos con lo que corre hoy)
+  const features = [
+    { name: 'Marcación (panel + GPS)', status: 'ok', note: 'Disponible' },
+    { name: 'QR en puerta / pantalla', status: 'ok', note: 'Disponible' },
+    { name: 'Horas, extras y reportes', status: 'ok', note: 'Disponible' },
+    { name: 'Permisos y vacaciones', status: 'ok', note: 'Disponible' },
+    { name: 'Multi-sucursal', status: 'ok', note: 'Plan Completo' },
+    { name: 'Recibos de sueldo (PDF)', status: 'ok', note: 'Plan Completo' },
+    { name: 'Importar / exportar CSV', status: 'ok', note: 'Disponible' },
+    { name: 'Cobros Mercado Pago', status: h.mp ? 'ok' : 'warn', note: h.mp ? 'Conectado' : 'Sin token (modo demo o pendiente)' },
+    { name: 'Emails transaccionales', status: h.mail ? 'ok' : 'warn', note: h.mail ? 'Configurado' : 'Sin proveedor de mail' },
+    { name: 'App nativa en tiendas', status: 'warn', note: 'No aplica · es web / PWA' },
+  ];
+  render(html`<main class="status-page">
+    <div class="status-page__inner">
+      <a href="/" class="btn btn-outline btn-sm mb">← Volver al inicio</a>
+      <div class="status-hero card ${ok ? 'status-hero--ok' : 'status-hero--down'}">
+        <div class="status-hero__dot" aria-hidden="true"></div>
+        <h1>Estado de AsistOK</h1>
+        <p>${ok ? 'Los sistemas principales responden con normalidad.' : 'Hay un problema para llegar a la API o la base de datos.'}</p>
+        <p class="muted" style="font-size:.8rem;margin:8px 0 0">Actualizado ${h.time ? new Date(h.time).toLocaleString('es-AR') : new Date().toLocaleString('es-AR')}</p>
       </div>
+      <div class="card st-card">
+        <h2 class="st-h">Infraestructura</h2>
+        ${row('API y base de datos', h.db === 'up' ? 'ok' : 'down', h.db === 'up' ? 'Respondiendo' : (h.error || 'Sin respuesta'))}
+        ${row('Mercado Pago', h.mp ? 'ok' : 'warn', h.mp ? 'Credenciales cargadas' : 'No configurado')}
+        ${row('Correo (Resend)', h.mail ? 'ok' : 'warn', h.mail ? 'Listo para enviar' : 'No configurado')}
+        ${row('CAPTCHA (Turnstile)', h.turnstile ? 'ok' : 'warn', h.turnstile ? 'Activo' : 'Desactivado')}
+        ${row('Último backup', h.backup?.at ? (h.backup.ok === false ? 'warn' : 'ok') : 'warn', h.backup?.at ? new Date(h.backup.at).toLocaleString('es-AR') : 'Sin registro')}
+      </div>
+      <div class="card st-card">
+        <h2 class="st-h">Funciones del producto</h2>
+        <p class="muted mb" style="font-size:.82rem">Qué podés usar hoy en la plataforma (no es marketing: refleja el estado real).</p>
+        ${features.map((f) => row(f.name, f.status, f.note))}
+      </div>
+      <p class="muted" style="font-size:.8rem;text-align:center;margin-top:16px">Si ves algo caído en tu negocio y acá figura operativo, escribinos por el canal de soporte.</p>
     </div>
   </main>`);
 }

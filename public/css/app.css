@@ -1207,3 +1207,33 @@ td.diff-pos{color:#047857;font-weight:600}
 .dark .reg-trial-card__title{color:#5eead4}
 
 .csv-actions{display:flex;flex-wrap:wrap;gap:8px}
+
+
+/* Feature icons (landing) */
+.ok-landing .feat-icon{
+  width:44px;height:44px;border-radius:12px;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(15,118,110,.1);color:#0f766e;
+  margin-bottom:10px;font-size:1.25rem;
+}
+.ok-landing .feat-icon svg{display:block}
+
+/* Página /estado */
+.status-page{min-height:100vh;background:var(--bg,#f1f5f9);padding:24px 16px 48px}
+.status-page__inner{max-width:560px;margin:0 auto}
+.status-hero{text-align:center;padding:28px 20px;margin-bottom:16px;position:relative}
+.status-hero h1{font-size:1.35rem;margin:10px 0 6px}
+.status-hero p{margin:0;color:var(--muted,#64748b);font-size:.92rem;line-height:1.45}
+.status-hero__dot{width:12px;height:12px;border-radius:50%;margin:0 auto;background:#94a3b8}
+.status-hero--ok .status-hero__dot{background:#10b981;box-shadow:0 0 0 6px rgba(16,185,129,.2)}
+.status-hero--down .status-hero__dot{background:#ef4444;box-shadow:0 0 0 6px rgba(239,68,68,.2)}
+.st-card{padding:8px 4px 4px;margin-bottom:14px}
+.st-h{font-size:.95rem;margin:8px 12px 4px;font-weight:700}
+.st-row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:10px 12px;border-top:1px solid var(--border,#e2e8f0);font-size:.88rem}
+.st-row__label{font-weight:500}
+.st-row__right{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.st-pill{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em;padding:3px 8px;border-radius:999px}
+.st-pill--ok{background:#d1fae5;color:#065f46}
+.st-pill--warn{background:#fef3c7;color:#92400e}
+.st-pill--down{background:#fee2e2;color:#991b1b}
+.st-detail{font-size:.75rem;color:var(--muted,#64748b)}
