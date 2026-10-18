@@ -458,13 +458,21 @@ acts['emp-disable'] = async (el) => { await post(`/api/owner/employees/${el.data
 acts['emp-enable'] = async (el) => { await post(`/api/owner/employees/${el.dataset.id}/enable`); closeModal(); toast('Empleado habilitado'); afterEmpChange(); };
 
 // ---------- Importar empleados por CSV ----------
-acts['csv-open'] = () => openModal(html`<h3 style="margin-bottom:6px">Importar empleados desde CSV</h3>
-  <p class="muted mb">1) Descargá la plantilla y completala en Excel o Google Sheets. 2) Guardala como CSV. 3) Subila acá.</p>
-  <a class="btn btn-outline btn-sm mb" href="/api/owner/employees/import-template">📥 Descargar plantilla</a>
-  <form data-form="csv-import"><div class="form-group"><label for="csv-file">Archivo CSV (hasta 200 filas)</label><input id="csv-file" name="file" type="file" accept=".csv,text/csv,text/plain" required></div>
+acts['csv-open'] = () => openModal(html`<h3 style="margin-bottom:6px">Empleados · CSV</h3>
+  <p class="muted mb" style="font-size:.88rem;line-height:1.45">Importá muchos de una vez o bajá los que ya tenés cargados. Formato: columnas separadas por <strong>;</strong> (Excel en español).</p>
+  <div class="csv-actions mb">
+    <a class="btn btn-outline btn-sm" href="/api/owner/employees/export-csv">📤 Exportar empleados</a>
+    <a class="btn btn-outline btn-sm" href="/api/owner/employees/import-template">📥 Plantilla vacía</a>
+    <a class="btn btn-outline btn-sm" href="/api/owner/employees/import-template?examples=1">📄 Plantilla con ejemplos</a>
+  </div>
+  <p class="muted mb" style="font-size:.8rem">La plantilla vacía solo tiene los títulos. La de ejemplos trae 2 filas de muestra para copiar el formato.</p>
+  <form data-form="csv-import">
+    <div class="form-group"><label for="csv-file">Subir CSV (hasta 200 filas)</label><input id="csv-file" name="file" type="file" accept=".csv,text/csv,text/plain" required></div>
     <label class="row mb" style="font-size:.85rem"><input type="checkbox" name="as_pending"> Cargarlos como <strong>pendientes</strong> (los autorizás vos uno por uno)</label>
-    <p class="muted mb">Sin tildar, quedan activos con una contraseña temporal. Si superás el límite de tu plan, las filas de más se rechazan con un aviso.</p>
-    <button class="btn btn-primary btn-block" type="submit">Importar</button><button class="btn btn-outline btn-block mt" type="button" data-act="close-modal">Cancelar</button></form>`);
+    <p class="muted mb" style="font-size:.82rem">Sin tildar, quedan activos con contraseña temporal. Si superás el límite del plan, las filas de más se rechazan.</p>
+    <button class="btn btn-primary btn-block" type="submit">Importar</button>
+    <button class="btn btn-outline btn-block mt" type="button" data-act="close-modal">Cancelar</button>
+  </form>`);
 forms['csv-import'] = async (v, f) => {
   const file = f.querySelector('input[type=file]').files[0];
   if (file.size > 900 * 1024) throw new Error('El archivo es muy grande. Dividilo en partes de hasta 200 filas.');

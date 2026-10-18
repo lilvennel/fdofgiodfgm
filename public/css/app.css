@@ -1177,3 +1177,33 @@ td.diff-pos{color:#047857;font-weight:600}
   box-shadow:0 4px 12px rgba(15,118,110,.28);
 }
 .ok-landing .price-card.featured .price-trial-pill{left:50%;transform:translateX(-50%)}
+
+
+/* Aviso de prueba en registro — integrado al form */
+.reg-trial-card{
+  display:flex;gap:12px;align-items:flex-start;
+  margin:0 0 14px;padding:12px 14px;
+  border-radius:12px;
+  background:linear-gradient(135deg,rgba(15,118,110,.08),rgba(13,148,136,.04));
+  border:1px solid rgba(15,118,110,.18);
+}
+.reg-trial-card__icon{
+  flex-shrink:0;width:28px;height:28px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  background:#0f766e;color:#fff;font-size:.75rem;font-weight:800;
+}
+.reg-trial-card__title{
+  font-size:.82rem;font-weight:700;color:#0f766e;margin:0 0 2px;letter-spacing:-.01em;
+}
+.reg-trial-card__text{
+  margin:0;font-size:.78rem;line-height:1.45;color:var(--muted,#64748b);
+}
+[data-theme=dark] .reg-trial-card,
+.dark .reg-trial-card{
+  background:linear-gradient(135deg,rgba(45,212,191,.12),rgba(15,118,110,.08));
+  border-color:rgba(45,212,191,.25);
+}
+[data-theme=dark] .reg-trial-card__title,
+.dark .reg-trial-card__title{color:#5eead4}
+
+.csv-actions{display:flex;flex-wrap:wrap;gap:8px}

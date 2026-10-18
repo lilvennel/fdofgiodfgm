@@ -111,8 +111,14 @@ export async function showAuth(message, opts = {}) {
         <option value="sub">Suscripción mensual</option>
         <option value="once">Pago único (de por vida)</option></select></div>
       ${eyeless('coupon', 'Código de descuento (opcional)', 'text', 'autocomplete="off" style="text-transform:uppercase"')}
-      <p class="muted" style="font-size:.85rem;margin-bottom:8px">Incluye hasta ${c.free_employees ?? 40} empleados.</p>
-      <p id="trial-hint" class="muted" style="font-size:.85rem;margin-bottom:8px;line-height:1.45">🎁 <strong>Probá Esencial gratis durante 30 días.</strong> Mercado Pago te pedirá un medio de pago, pero el primer cobro se realiza al terminar la prueba. Cancelá antes para evitar el cobro. Pro, Completo y pago único no incluyen prueba gratis.</p>
+      <p class="muted" style="font-size:.85rem;margin-bottom:10px">Incluye hasta ${c.free_employees ?? 40} empleados.</p>
+      <div class="reg-trial-card" role="note">
+        <div class="reg-trial-card__icon" aria-hidden="true">✦</div>
+        <div>
+          <div class="reg-trial-card__title">1 mes gratis en Esencial</div>
+          <p class="reg-trial-card__text">Con <strong>suscripción mensual</strong> del plan Esencial, Mercado Pago pide un medio de pago y <strong>no cobra</strong> hasta que termine la prueba. Pro, Completo y pago único se cobran al activar.</p>
+        </div>
+      </div>
       <label class="terms-check" style="display:flex;gap:10px;align-items:flex-start;margin:12px 0 8px">
         <input type="checkbox" name="accept_terms" value="1" required style="margin-top:3px;width:18px;height:18px;flex-shrink:0">
         <span class="muted" style="font-size:.85rem;line-height:1.4">Leí y acepto los <a href="/terminos" target="_blank" rel="noopener">Términos y condiciones</a>.</span>
@@ -352,10 +358,11 @@ export async function showAuth(message, opts = {}) {
         <details><summary>¿Qué pasa si marca desde la casa?</summary><p>Configurás el punto del local una vez. Si intentan marcar lejos, el sistema rechaza el intento y te llega un aviso de seguridad.</p></details>
         <details><summary>¿Cómo sé si alguien llegó tarde?</summary><p>En Config cargás la hora de entrada del turno y los minutos de tolerancia. Si marcan después de eso, te llega la notificación. No inicia la jornada sola: solo avisa.</p></details>
         <details><summary>¿Qué incluye cada plan?</summary><p><strong>Esencial:</strong> marcación, GPS, horas, extras y avisos (1 sucursal). <strong>Pro:</strong> todo eso + permisos, reportes y cierre automático. <strong>Completo:</strong> Pro + multi-sucursal y recibos de sueldo incluidos.</p></details>
-        <details><summary>¿Puedo pagar una sola vez?</summary><p>Sí. En cada plan podés elegir suscripción mensual o pago único (licencia de por vida del plan).</p></details>
+        <details><summary>¿Hay periodo de prueba gratis?</summary><p>Sí, en el <strong>plan Esencial</strong> con <strong>suscripción mensual</strong>: 1 mes de prueba. Al activar, Mercado Pago te pide un medio de pago y <strong>no cobra nada</strong> hasta que termine el mes. Si cancelás antes del primer cobro, no se debita. Pro, Completo y el pago único no incluyen prueba gratis.</p></details>
+        <details><summary>¿Qué pasa cuando termina la prueba?</summary><p>Mercado Pago intenta el cobro del plan. Si se aprueba, seguís con el servicio. Si falla el pago o cancelaste, la cuenta pasa a pendiente de pago: el dueño puede regularizar; empleados y encargados quedan sin acceso hasta entonces. Tus datos no se borran.</p></details>
+        <details><summary>¿Puedo pagar una sola vez?</summary><p>Sí. En cada plan podés elegir suscripción mensual o pago único (licencia de por vida del plan). El pago único no tiene mes de prueba.</p></details>
         <details><summary>¿Y si no hay luz o se corta internet?</summary><p>Con el celular y datos móviles pueden marcar. Si no hay red, el dueño puede corregir marcas a mano desde el panel.</p></details>
-        <details><summary>¿Cómo funciona la prueba gratis?</summary><p>El plan Esencial con suscripción mensual incluye 30 días sin cargo. Mercado Pago te pedirá asociar un medio de pago al iniciar la suscripción; el primer cobro se realiza cuando termina la prueba. Si cancelás antes de esa fecha, evitás el cobro. Pro, Completo y la licencia de pago único no incluyen prueba gratis. La prueba es por única vez y no se reinicia al cambiar de plan.</p></details>
-        <details><summary>¿Puedo cancelar la suscripción?</summary><p>Sí. Desde Config cancelás la renovación; seguís con acceso hasta el fin del período ya pagado o hasta que termine el período de prueba vigente.</p></details>
+        <details><summary>¿Puedo cancelar la suscripción?</summary><p>Sí. Desde Config cancelás la renovación; seguís con acceso hasta el fin del período ya pagado. En la prueba gratis, si cancelás antes del primer cobro no se te debita.</p></details>
       </div>
     </section>
 
@@ -518,7 +525,7 @@ function paymentScreen(statusMsg) {
       <div class="summary-row summary-total"><span>Total${tenant.plan === 'sub' ? ' (primer mes)' : ''}</span><strong>${money(total)}</strong></div></div>
     <div class="secure-note"><span>🔒</span><div>Pago procesado por <strong>Mercado Pago</strong>. No guardamos datos de tu tarjeta.</div></div>
     ${tenant.plan === 'sub' && (tenant.plan_tier || 'esencial') === 'esencial' ? html`
-    <p class="muted mb" style="font-size:.88rem;line-height:1.45">🎁 <strong>Probá Esencial gratis durante 30 días.</strong> Mercado Pago te pedirá un medio de pago, pero el primer cobro se realiza al terminar la prueba. Cancelá antes para evitar el cobro.</p>
+    <p class="muted mb" style="font-size:.88rem;line-height:1.45">🎁 <strong>1 mes de prueba gratis</strong> en plan Esencial. Mercado Pago pide un medio de pago y <strong>no cobra nada</strong> hasta que termine. Si cancelás antes, no se debita.</p>
     <button class="btn btn-mp btn-block" data-act="checkout" data-kind="plan" type="button">${demo ? 'Activar prueba (modo demo)' : 'Probar 1 mes gratis con Mercado Pago'}</button>` : html`
     <button class="btn btn-mp btn-block" data-act="checkout" data-kind="plan" type="button">${demo ? 'Pagar (modo prueba)' : 'Pagar con Mercado Pago'}</button>`}
     <button class="btn btn-outline btn-block mt" data-act="logout" type="button">Cerrar sesión</button>
