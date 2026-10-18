@@ -28,12 +28,13 @@ function tenantView(t, role = 'owner') {
     mod_suc: feats.multi_suc, mod_rec: feats.recibos, allow_extra: !!t.allow_extra,
     plan_tier: feats.tier, features: feats, mark_qr: t.mark_qr !== 0, mark_gps: t.mark_gps !== 0, logo_url: t.logo_path ? '/api/tenant/logo' : null, has_sign: !!t.sign_path,
   };
-  // Trial: activo y todavía no venció paid_until del periodo de prueba (con o sin MP ya vinculado)
-  const isTrial = t.status === 'active' && !!t.paid_until && t.paid_until > Date.now()
+  // Trial visible solo plan Esencial (el free_trial de MP aplica solo a ese tier)
+  const isEsencial = (t.plan_tier || 'esencial') === 'esencial';
+  const isTrial = isEsencial && t.status === 'active' && !!t.paid_until && t.paid_until > Date.now()
     && (Date.now() - (t.created_at || 0)) < 40 * 864e5;
   base.trial = isTrial;
   base.trial_until = isTrial ? t.paid_until : null;
-  base.trial_days = require('../lib/config').TRIAL_DAYS || 0;
+  base.trial_days = isEsencial ? (require('../lib/config').TRIAL_DAYS || 0) : 0;
   if (role !== 'owner') return base;
   return {
     ...base, plan: t.plan, plan_tier: t.plan_tier || 'esencial', paid_until: t.paid_until, extra_slots: t.extra_slots,

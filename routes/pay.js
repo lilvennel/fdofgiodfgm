@@ -34,7 +34,9 @@ route('POST', '/api/pay/checkout', { auth: 'owner', anyStatus: true }, async (ct
   if (!mp.enabled()) return { url: `${cfg.APP_URL}/?demo_pay=${extRef}`, demo: true, amount, provider: 'mercadopago' };
   try {
     if (kind === 'plan' && t.plan === 'sub') {
-      const pa = await mp.createPreapproval({ reason: title, amount, extRef, email: ctx.user.email });
+      // Trial MP solo en plan Esencial (Pro/Completo pagan desde el día 1)
+      const trialDays = (t.plan_tier || 'esencial') === 'esencial' ? cfg.TRIAL_DAYS : 0;
+      const pa = await mp.createPreapproval({ reason: title, amount, extRef, email: ctx.user.email, trialDays });
       run('UPDATE payments SET mp_pref_id=? WHERE ext_ref=?', pa.id, extRef);
       return { url: pa.init_point, amount };
     }

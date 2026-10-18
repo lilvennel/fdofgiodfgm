@@ -112,7 +112,7 @@ export async function showAuth(message, opts = {}) {
         <option value="once">Pago único (de por vida)</option></select></div>
       ${eyeless('coupon', 'Código de descuento (opcional)', 'text', 'autocomplete="off" style="text-transform:uppercase"')}
       <p class="muted" style="font-size:.85rem;margin-bottom:8px">Incluye hasta ${c.free_employees ?? 40} empleados.</p>
-      <p class="muted" style="font-size:.85rem;margin-bottom:8px;line-height:1.45">🎁 Con <strong>suscripción mensual</strong>: <strong>30 días de prueba gratis</strong> vía Mercado Pago (cargás un medio de pago y no se cobra hasta que termine la prueba). El pago único no tiene trial.</p>
+      <p id="trial-hint" class="muted" style="font-size:.85rem;margin-bottom:8px;line-height:1.45">🎁 <strong>Plan Esencial + suscripción:</strong> 1 mes de prueba gratis (Mercado Pago pide medio de pago y no cobra hasta que termine). Pro, Completo y pago único no incluyen trial.</p>
       <label class="terms-check" style="display:flex;gap:10px;align-items:flex-start;margin:12px 0 8px">
         <input type="checkbox" name="accept_terms" value="1" required style="margin-top:3px;width:18px;height:18px;flex-shrink:0">
         <span class="muted" style="font-size:.85rem;line-height:1.4">Leí y acepto los <a href="/terminos" target="_blank" rel="noopener">Términos y condiciones</a>.</span>
@@ -252,6 +252,7 @@ export async function showAuth(message, opts = {}) {
         </div>
         <div class="grid-3" style="text-align:left">
           <div class="price-card">
+            <span class="price-trial-pill">1 mes gratis</span>
             <h3>Esencial</h3>
             <div class="price" data-m="${c.prices.esencial_m ?? c.prices.sub}" data-y="${c.prices.esencial_y ?? c.prices.once}">${money(c.prices.esencial_m ?? c.prices.sub)} <small>/ mes</small></div>
             <p class="muted" style="font-size:.8rem"><strong>${c.free_employees ?? 40} empleados incluidos</strong> · 1 sucursal<br><span style="font-size:.75rem">Podés sumar más cuando los necesites (${money(c.prices.extra)} c/u, pago único)</span></p>
@@ -261,7 +262,8 @@ export async function showAuth(message, opts = {}) {
               <li>Horas y extras del mes</li>
               <li>Notificaciones al dueño</li>
             </ul>
-            <button class="btn btn-primary btn-block" type="button" data-act="pick-plan" data-tier="esencial" data-plan-billing data-billing="sub">Activar Esencial</button>
+            <button class="btn btn-primary btn-block" type="button" data-act="pick-plan" data-tier="esencial" data-plan-billing data-billing="sub">Probar Esencial</button>
+            <p class="price-trial-note muted" style="font-size:.72rem;text-align:center;margin-top:10px;line-height:1.35">Prueba 1 mes · después se cobra el plan · cancelás cuando quieras</p>
           </div>
           <div class="price-card featured">
             <span class="badge" style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:#4f46e5;color:#fff;font-size:.72rem;font-weight:800;padding:4px 10px;border-radius:999px">Más elegido</span>
@@ -421,7 +423,14 @@ acts['bill-mode'] = (el) => {
     const label = mode === 'm' ? '/ mes' : ' pago único';
     node.innerHTML = '$ ' + Number(v).toLocaleString('es-AR') + ' <small>' + label + '</small>';
   });
-  document.querySelectorAll('[data-plan-billing]').forEach((b) => { b.dataset.billing = mode === 'y' ? 'once' : 'sub'; });
+  document.querySelectorAll('[data-plan-billing]').forEach((b) => {
+    b.dataset.billing = mode === 'y' ? 'once' : 'sub';
+    // Solo Esencial tiene trial en mensual
+    if (b.dataset.tier === 'esencial') b.textContent = mode === 'm' ? 'Probar Esencial' : 'Activar Esencial';
+  });
+  document.querySelectorAll('.price-trial-pill, .price-trial-note').forEach((n) => {
+    n.style.display = mode === 'm' ? '' : 'none';
+  });
 };
 acts['pick-plan'] = async (el) => {
   authTab = 'reg';
@@ -507,8 +516,10 @@ function paymentScreen(statusMsg) {
       ${pct ? html`<div class="summary-row"><span>Descuento ${pct}%${tenant.discount_months && tenant.plan === 'sub' ? ` (${tenant.discount_months} meses)` : ''}</span><span>− ${money(base - total)}</span></div>` : ''}
       <div class="summary-row summary-total"><span>Total${tenant.plan === 'sub' ? ' (primer mes)' : ''}</span><strong>${money(total)}</strong></div></div>
     <div class="secure-note"><span>🔒</span><div>Pago procesado por <strong>Mercado Pago</strong>. No guardamos datos de tu tarjeta.</div></div>
-    <p class="muted mb" style="font-size:.88rem;line-height:1.45">🎁 <strong>30 días de prueba gratis</strong> al suscribirte. Mercado Pago te pide un medio de pago y <strong>no cobra nada</strong> hasta que termine la prueba. Si cancelás antes, no se te debita.</p>
-    <button class="btn btn-mp btn-block" data-act="checkout" data-kind="plan" type="button">${demo ? 'Activar prueba (modo demo)' : 'Empezar prueba gratis con Mercado Pago'}</button>
+    ${tenant.plan === 'sub' && (tenant.plan_tier || 'esencial') === 'esencial' ? html`
+    <p class="muted mb" style="font-size:.88rem;line-height:1.45">🎁 <strong>1 mes de prueba gratis</strong> en plan Esencial. Mercado Pago pide un medio de pago y <strong>no cobra nada</strong> hasta que termine. Si cancelás antes, no se debita.</p>
+    <button class="btn btn-mp btn-block" data-act="checkout" data-kind="plan" type="button">${demo ? 'Activar prueba (modo demo)' : 'Probar 1 mes gratis con Mercado Pago'}</button>` : html`
+    <button class="btn btn-mp btn-block" data-act="checkout" data-kind="plan" type="button">${demo ? 'Pagar (modo prueba)' : 'Pagar con Mercado Pago'}</button>`}
     <button class="btn btn-outline btn-block mt" data-act="logout" type="button">Cerrar sesión</button>
   </div></div>`);
 }
