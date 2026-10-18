@@ -53,3 +53,9 @@
 - **H10** En producción no se crea un Super Admin con contraseña de ejemplo/débil (la app no arranca); aviso crítico si el existente la usa. `.env.example` ya no trae una clave.
 - **H11** docker-compose publica `127.0.0.1:3000`; `TRUST_PROXY=N` cuenta proxies y toma la IP desde la derecha de `X-Forwarded-For` (no falsificable por el cliente).
 - **Legales**: la plantilla se muestra como “texto provisional” y hay aviso crítico en Super Admin mientras no se reemplace.
+
+## 2026-10-18 · Presentación de prueba gratis y FAQ
+- Se mejoró el bloque informativo del trial en el registro para que se distinga visualmente y explique condiciones con claridad.
+- Se mejoró el texto de prueba en la tarjeta de Esencial.
+- Se agregaron preguntas frecuentes sobre el mes de prueba, medios de pago, cancelación, elegibilidad y cambios de plan.
+- La prueba se presenta como beneficio de bienvenida de Esencial mensual, no como una licencia permanente ni como algo que se reinicia al cambiar de plan.

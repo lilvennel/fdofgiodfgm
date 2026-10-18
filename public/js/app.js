@@ -112,7 +112,7 @@ export async function showAuth(message, opts = {}) {
         <option value="once">Pago único (de por vida)</option></select></div>
       ${eyeless('coupon', 'Código de descuento (opcional)', 'text', 'autocomplete="off" style="text-transform:uppercase"')}
       <p class="muted" style="font-size:.85rem;margin-bottom:8px">Incluye hasta ${c.free_employees ?? 40} empleados.</p>
-      <p id="trial-hint" class="muted" style="font-size:.85rem;margin-bottom:8px;line-height:1.45">🎁 <strong>Plan Esencial + suscripción:</strong> 1 mes de prueba gratis (Mercado Pago pide medio de pago y no cobra hasta que termine). Pro, Completo y pago único no incluyen trial.</p>
+      <div id="trial-hint" class="trial-info"><span class="trial-info-icon" aria-hidden="true">🎁</span><div><strong>Probá Esencial gratis durante 1 mes</strong><p>Mercado Pago te pedirá un medio de pago, pero no te cobrará durante la prueba. Después comienza la suscripción mensual, salvo que canceles antes. Pro, Completo y pago único no incluyen prueba gratis.</p><small>La prueba es por única vez y no se reinicia al cambiar de plan.</small></div></div>
       <label class="terms-check" style="display:flex;gap:10px;align-items:flex-start;margin:12px 0 8px">
         <input type="checkbox" name="accept_terms" value="1" required style="margin-top:3px;width:18px;height:18px;flex-shrink:0">
         <span class="muted" style="font-size:.85rem;line-height:1.4">Leí y acepto los <a href="/terminos" target="_blank" rel="noopener">Términos y condiciones</a>.</span>
@@ -121,7 +121,7 @@ export async function showAuth(message, opts = {}) {
         <input type="checkbox" name="accept_privacy" value="1" required style="margin-top:3px;width:18px;height:18px;flex-shrink:0">
         <span class="muted" style="font-size:.85rem;line-height:1.4">Leí y acepto la <a href="/privacidad" target="_blank" rel="noopener">Política de privacidad</a>.</span>
       </label>
-      <p class="muted" style="font-size:.8rem;margin:-8px 0 12px">Al registrarte te enviamos un email para <strong>confirmar tu dirección</strong>. Sin eso no podés pagar ni activar el negocio.</p>
+      <p class="muted" style="font-size:.8rem;margin:-8px 0 12px">Al registrarte te enviamos un email para <strong>confirmar tu dirección</strong>. La confirmación ayuda a proteger tu cuenta.</p>
       ${turnstileSlot()}
       <button class="btn btn-primary btn-block" type="submit">Crear cuenta y continuar al pago</button>
     </form>`
@@ -263,7 +263,7 @@ export async function showAuth(message, opts = {}) {
               <li>Notificaciones al dueño</li>
             </ul>
             <button class="btn btn-primary btn-block" type="button" data-act="pick-plan" data-tier="esencial" data-plan-billing data-billing="sub">Probar Esencial</button>
-            <p class="price-trial-note muted" style="font-size:.72rem;text-align:center;margin-top:10px;line-height:1.35">Prueba 1 mes · después se cobra el plan · cancelás cuando quieras</p>
+            <p class="price-trial-note muted" style="font-size:.76rem;text-align:center;margin-top:12px;line-height:1.5">🎁 30 días sin cargo · luego $ mensual · cancelás antes del primer cobro</p>
           </div>
           <div class="price-card featured">
             <span class="badge" style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:#4f46e5;color:#fff;font-size:.72rem;font-weight:800;padding:4px 10px;border-radius:999px">Más elegido</span>
@@ -352,7 +352,10 @@ export async function showAuth(message, opts = {}) {
         <details><summary>¿Qué pasa si marca desde la casa?</summary><p>Configurás el punto del local una vez. Si intentan marcar lejos, el sistema rechaza el intento y te llega un aviso de seguridad.</p></details>
         <details><summary>¿Cómo sé si alguien llegó tarde?</summary><p>En Config cargás la hora de entrada del turno y los minutos de tolerancia. Si marcan después de eso, te llega la notificación. No inicia la jornada sola: solo avisa.</p></details>
         <details><summary>¿Qué incluye cada plan?</summary><p><strong>Esencial:</strong> marcación, GPS, horas, extras y avisos (1 sucursal). <strong>Pro:</strong> todo eso + permisos, reportes y cierre automático. <strong>Completo:</strong> Pro + multi-sucursal y recibos de sueldo incluidos.</p></details>
-        <details><summary>¿Puedo pagar una sola vez?</summary><p>Sí. En cada plan podés elegir suscripción mensual o pago único (licencia de por vida del plan).</p></details>
+        <details class="faq-trial"><summary>🎁 ¿Cómo funciona el mes de prueba gratis?</summary><p>El plan Esencial con suscripción mensual incluye 30 días de prueba por única vez. Mercado Pago te pedirá asociar un medio de pago para autorizar la suscripción, pero no realizará el primer cobro hasta que termine el período de prueba. Si no querés continuar, cancelá antes de la fecha de cobro desde la configuración de tu suscripción.</p></details>
+        <details><summary>¿La prueba gratis se reinicia si cambio de plan?</summary><p>No. La prueba es un beneficio de bienvenida por cuenta y no se reinicia al pasar a Pro o Completo. Si elegís pago único/de por vida, ese plan no incluye prueba gratis; el período de prueba no se convierte en una licencia de por vida.</p></details>
+        <details><summary>¿Qué planes incluyen la prueba gratis?</summary><p>Solo Esencial con suscripción mensual. Pro, Completo y cualquiera de los planes con pago único se cobran según las condiciones que se muestran antes de pagar.</p></details>
+        <details><summary>¿Puedo pagar una sola vez?</summary><p>Sí. Podés elegir pago único para la licencia del plan correspondiente. El pago único no incluye prueba gratis ni genera una suscripción mensual.</p></details>
         <details><summary>¿Y si no hay luz o se corta internet?</summary><p>Con el celular y datos móviles pueden marcar. Si no hay red, el dueño puede corregir marcas a mano desde el panel.</p></details>
         <details><summary>¿Puedo cancelar la suscripción?</summary><p>Sí. Desde Config cancelás la renovación; seguís con acceso hasta el fin del período ya pagado.</p></details>
       </div>

@@ -1177,3 +1177,15 @@ td.diff-pos{color:#047857;font-weight:600}
   box-shadow:0 4px 12px rgba(15,118,110,.28);
 }
 .ok-landing .price-card.featured .price-trial-pill{left:50%;transform:translateX(-50%)}
+
+
+/* Trial gratuito: bloque claro, accesible y coherente con el checkout */
+.ok-landing .trial-info{display:flex;align-items:flex-start;gap:12px;margin:12px 0 16px;padding:15px 16px;border:1px solid #99f6e4;border-radius:16px;background:linear-gradient(135deg,#f0fdfa 0%,#f8fafc 100%);color:#134e4a;box-shadow:0 6px 18px rgba(15,118,110,.06)}
+.ok-landing .trial-info-icon{display:grid;place-items:center;flex:0 0 38px;width:38px;height:38px;border-radius:12px;background:#ccfbf1;font-size:1.25rem}
+.ok-landing .trial-info strong{display:block;font-size:.95rem;line-height:1.35;color:#115e59;margin:1px 0 5px}
+.ok-landing .trial-info p{font-size:.83rem;line-height:1.55;color:#335e5b;margin:0 0 6px}
+.ok-landing .trial-info small{display:block;font-size:.75rem;line-height:1.45;color:#64748b}
+.ok-landing .price-trial-note{max-width:240px;margin-left:auto!important;margin-right:auto!important;padding:8px 10px;border-radius:10px;background:#f0fdfa;color:#0f766e!important;font-weight:600}
+.ok-landing details.faq-trial{border-color:#99f6e4;background:linear-gradient(135deg,#f0fdfa 0%,#fff 100%)}
+.ok-landing details[open] summary{color:#0f766e}
+@media(max-width:520px){.ok-landing .trial-info{padding:13px;gap:10px}.ok-landing .trial-info-icon{flex-basis:34px;width:34px;height:34px}}
