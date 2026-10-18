@@ -112,6 +112,7 @@ export async function showAuth(message, opts = {}) {
         <option value="once">Pago único (de por vida)</option></select></div>
       ${eyeless('coupon', 'Código de descuento (opcional)', 'text', 'autocomplete="off" style="text-transform:uppercase"')}
       <p class="muted" style="font-size:.85rem;margin-bottom:8px">Incluye hasta ${c.free_employees ?? 40} empleados.</p>
+      <p class="muted" style="font-size:.85rem;margin-bottom:8px;line-height:1.45">🎁 Con <strong>suscripción mensual</strong>: <strong>30 días de prueba gratis</strong> vía Mercado Pago (cargás un medio de pago y no se cobra hasta que termine la prueba). El pago único no tiene trial.</p>
       <label class="terms-check" style="display:flex;gap:10px;align-items:flex-start;margin:12px 0 8px">
         <input type="checkbox" name="accept_terms" value="1" required style="margin-top:3px;width:18px;height:18px;flex-shrink:0">
         <span class="muted" style="font-size:.85rem;line-height:1.4">Leí y acepto los <a href="/terminos" target="_blank" rel="noopener">Términos y condiciones</a>.</span>
@@ -506,7 +507,8 @@ function paymentScreen(statusMsg) {
       ${pct ? html`<div class="summary-row"><span>Descuento ${pct}%${tenant.discount_months && tenant.plan === 'sub' ? ` (${tenant.discount_months} meses)` : ''}</span><span>− ${money(base - total)}</span></div>` : ''}
       <div class="summary-row summary-total"><span>Total${tenant.plan === 'sub' ? ' (primer mes)' : ''}</span><strong>${money(total)}</strong></div></div>
     <div class="secure-note"><span>🔒</span><div>Pago procesado por <strong>Mercado Pago</strong>. No guardamos datos de tu tarjeta.</div></div>
-    <button class="btn btn-mp btn-block" data-act="checkout" data-kind="plan" type="button">${demo ? 'Pagar (modo prueba)' : 'Pagar con Mercado Pago'}</button>
+    <p class="muted mb" style="font-size:.88rem;line-height:1.45">🎁 <strong>30 días de prueba gratis</strong> al suscribirte. Mercado Pago te pide un medio de pago y <strong>no cobra nada</strong> hasta que termine la prueba. Si cancelás antes, no se te debita.</p>
+    <button class="btn btn-mp btn-block" data-act="checkout" data-kind="plan" type="button">${demo ? 'Activar prueba (modo demo)' : 'Empezar prueba gratis con Mercado Pago'}</button>
     <button class="btn btn-outline btn-block mt" data-act="logout" type="button">Cerrar sesión</button>
   </div></div>`);
 }
