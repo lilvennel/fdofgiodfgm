@@ -145,7 +145,7 @@ export async function showAuth(message, opts = {}) {
     ${c.payments.demo ? html`<div class="demo-banner">MODO DE PRUEBA · los pagos son simulados</div>` : ''}
     <header class="nav">
       <div class="wrap nav-inner">
-        <a class="logo" href="#" data-act="auth-tab" data-tab="login"><div class="logo-mark" aria-hidden="true"></div><span class="logo-text" style="font-weight:800">AsistOK</span></a>
+        <a class="logo" href="#" data-act="go-home"><div class="logo-mark" aria-hidden="true"></div><span class="logo-text" style="font-weight:800">AsistOK</span></a>
         <nav class="nav-links">
           <a href="#producto">Producto</a>
           <a href="#soporte">Soporte</a>
@@ -416,16 +416,33 @@ function startHero() {
   let i = 0;
   heroTimer = setInterval(() => { if (!document.querySelector('.hero-slide')) return clearInterval(heroTimer); slides[i].classList.remove('active'); i = (i + 1) % slides.length; slides[i].classList.add('active'); }, 6000);
 }
+function scrollToLoginIfNeeded() {
+  const login = document.getElementById('login');
+  if (!login) return;
+  const r = login.getBoundingClientRect();
+  // Solo scrollea si el panel no está ya a la vista (evita saltos molestos)
+  const visible = r.top >= -20 && r.top < window.innerHeight * 0.45;
+  if (!visible) login.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+acts['go-home'] = async () => {
+  authTab = 'login';
+  if (!document.querySelector('.ok-landing')) {
+    await showAuth(undefined, { skipCfg: true });
+  }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
 acts['auth-tab'] = async (el) => {
-  authTab = el.dataset.tab || 'login';
-  await showAuth(undefined, { skipCfg: true });
-  // Las pestañas del form están abajo: sin scroll parece que el botón no hace nada
-  setTimeout(() => document.getElementById('login')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 40);
+  const tab = el.dataset.tab || 'login';
+  const same = authTab === tab && document.getElementById('login');
+  authTab = tab;
+  if (!same) await showAuth(undefined, { skipCfg: true });
+  setTimeout(scrollToLoginIfNeeded, 40);
 };
 acts['go-register'] = async () => {
+  const same = authTab === 'reg' && document.getElementById('login');
   authTab = 'reg';
-  await showAuth(undefined, { skipCfg: true });
-  setTimeout(() => document.getElementById('login')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 40);
+  if (!same) await showAuth(undefined, { skipCfg: true });
+  setTimeout(scrollToLoginIfNeeded, 40);
 };
 acts['go-pricing'] = () => {
   document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -452,13 +469,14 @@ acts['pick-plan'] = async (el) => {
   authTab = 'reg';
   window.__pickTier = el.dataset.tier || 'esencial';
   window.__pickBilling = el.dataset.billing || 'sub';
-  await showAuth();
-  setTimeout(() => document.getElementById('login')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+  await showAuth(undefined, { skipCfg: true });
+  setTimeout(scrollToLoginIfNeeded, 80);
 };
 acts['scroll-login'] = async () => {
+  const same = authTab === 'login' && document.getElementById('login');
   authTab = 'login';
-  await showAuth();
-  setTimeout(() => document.getElementById('login')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+  if (!same) await showAuth(undefined, { skipCfg: true });
+  setTimeout(scrollToLoginIfNeeded, 80);
 };
 
 
