@@ -5,6 +5,7 @@ const { get, all, run, getSetting, audit } = require('../lib/db');
 const { randomToken } = require('../lib/security');
 const dom = require('../lib/domain');
 const mp = require('../lib/mp');
+const fc = require('../lib/fieldcrypto');
 const { intIn } = require('./common');
 
 const TITLES = {
@@ -26,6 +27,8 @@ route('POST', '/api/pay/checkout', { auth: 'owner', anyStatus: true }, async (ct
   if (!mp.enabled() && !cfg.ALLOW_DEMO_PAYMENTS) throw new HttpError(503, 'PAYMENTS_OFF', 'Los pagos todavía no están configurados. Escribinos y lo activamos.');
 
   const { amount } = dom.chargeFor(t, kind, qty);
+  // ctx.user viene de la base: el email está cifrado ('enc:…'); Mercado Pago necesita el email real
+  const payerEmail = fc.decryptEmail(ctx.user.email) || ctx.user.email;
   const extRef = `ap-${t.id}-${kind}-${randomToken(8)}`;
   const title = kind === 'plan' ? TITLES['plan_' + t.plan] : TITLES[kind];
   run('INSERT INTO payments(tenant_id,kind,qty,amount,status,ext_ref,created_at) VALUES(?,?,?,?,?,?,?)', t.id, kind, qty, amount, 'pending', extRef, Date.now());
@@ -36,11 +39,11 @@ route('POST', '/api/pay/checkout', { auth: 'owner', anyStatus: true }, async (ct
     if (kind === 'plan' && t.plan === 'sub') {
       // Trial MP solo en plan Esencial (Pro/Completo pagan desde el día 1)
       const trialDays = (t.plan_tier || 'esencial') === 'esencial' ? cfg.TRIAL_DAYS : 0;
-      const pa = await mp.createPreapproval({ reason: title, amount, extRef, email: ctx.user.email, trialDays });
+      const pa = await mp.createPreapproval({ reason: title, amount, extRef, email: payerEmail, trialDays });
       run('UPDATE payments SET mp_pref_id=? WHERE ext_ref=?', pa.id, extRef);
       return { url: pa.init_point, amount };
     }
-    const pref = await mp.createPreference({ title: qty > 1 ? `${title} x${qty}` : title, amount, extRef, email: ctx.user.email });
+    const pref = await mp.createPreference({ title: qty > 1 ? `${title} x${qty}` : title, amount, extRef, email: payerEmail });
     run('UPDATE payments SET mp_pref_id=? WHERE ext_ref=?', pref.id, extRef);
     return { url: pref.init_point, amount };
   } catch (e) {

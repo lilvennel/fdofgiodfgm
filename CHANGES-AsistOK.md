@@ -1,5 +1,8 @@
 # Asist OK — cambios sobre AsistOK v3
 
+## v3.1.12 — Fix pago con Mercado Pago
+- **Fix:** `/api/pay/checkout` enviaba a Mercado Pago el email cifrado del usuario (`enc:…`) como `payer_email`, y MP respondía 400 "Invalid value for payer_email". Ahora se descifra antes de enviarlo.
+
 ## v3.1.11 — Correcciones de auditoría
 - **Seguridad (jerarquía de cuentas):** nuevo `getManagedEmp`. Restablecer contraseña, deshabilitar, habilitar y editar una cuenta ahora respeta el rol: el dueño gestiona a todos, RRHH a empleados y encargados, el encargado solo a empleados de su sucursal (y no puede mover empleados a otra sucursal).
 - **Encargado limitado a su sucursal** también en marcas manuales (cargar, ver y borrar) y en la descarga de documentos (`/api/docs/:id/file`).
