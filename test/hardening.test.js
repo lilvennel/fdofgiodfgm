@@ -78,7 +78,7 @@ test('cambiar de plan NO es gratis: exige pagar la diferencia y recién ahí se 
   assert.equal((await o.get('/api/auth/me')).data.tenant.plan_tier, 'esencial');
   r = await o.post('/api/pay/checkout', { kind: 'plan_upgrade', tier: 'completo' });
   assert.equal(r.status, 200);
-  assert.equal(r.data.amount, 70000 - 45000); // diferencia Completo − Esencial (mensual)
+  assert.equal(r.data.amount, 99999 - 39999); // diferencia Completo − Esencial (precios x999) // diferencia Completo − Esencial (mensual)
   assert.equal((await o.get('/api/auth/me')).data.tenant.plan_tier, 'esencial'); // todavía no pagó
   await o.post('/api/pay/demo-confirm', { ref: new URL(r.data.url).searchParams.get('demo_pay') });
   const me = (await o.get('/api/auth/me')).data.tenant;

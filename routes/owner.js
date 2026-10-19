@@ -9,6 +9,7 @@ const sec = require('../lib/security');
 const dom = require('../lib/domain');
 const H = require('../lib/hours');
 const fc = require('../lib/fieldcrypto');
+const billing = require('../lib/billing');
 const { clean, emailOk, intIn, isoDateOk, hhmmOk, periodOf, decodeUpload } = require('./common');
 
 const A = { auth: ['owner', 'manager', 'hr'] }; // dueño, encargado o RRHH
@@ -1201,3 +1202,85 @@ route('POST', '/api/owner/plan/cancel', A_OWNER, async (ctx) => {
 });
 
 module.exports = { saveFile };
+
+
+// ---------- Facturación del dueño (feature flag) ----------
+route('GET', '/api/owner/billing/status', { auth: 'owner', anyStatus: true }, (ctx) => billing.billingStatus(ctx.tenant.id));
+route('GET', '/api/owner/billing/profile', { auth: 'owner', anyStatus: true }, (ctx) => {
+  const st = billing.billingStatus(ctx.tenant.id);
+  return { profile: st.profile, missing: st.missing, module_enabled: st.module_enabled };
+});
+route('PUT', '/api/owner/billing/profile', { auth: 'owner', anyStatus: true }, (ctx) => {
+  const st = billing.upsertProfile(ctx.tenant.id, ctx.body || {});
+  audit(ctx.user.id, ctx.tenant.id, 'billing.profile_updated', { complete: st.profile_complete });
+  return st;
+});
+route('GET', '/api/owner/invoices', { auth: 'owner', anyStatus: true }, (ctx) => {
+  const st = billing.billingStatus(ctx.tenant.id);
+  if (!st.module_enabled) return { invoices: [], module_enabled: false };
+  const rows = all('SELECT id,number,series,status,source,total_cents,currency,coupon_code,issued_at,sent_at,created_at,payment_id FROM invoices WHERE tenant_id=? ORDER BY id DESC LIMIT 100', ctx.tenant.id);
+  return { invoices: rows, module_enabled: true };
+});
+route('GET', '/api/owner/invoices/:id', { auth: 'owner', anyStatus: true }, (ctx) => {
+  const d = billing.invoiceDetail(Number(ctx.params.id));
+  if (!d || d.invoice.tenant_id !== ctx.tenant.id) throw notFound('Factura no encontrada');
+  return d;
+});
+route('GET', '/api/owner/invoices/:id/pdf', { auth: 'owner', anyStatus: true }, (ctx) => {
+  const d = billing.invoiceDetail(Number(ctx.params.id));
+  if (!d || d.invoice.tenant_id !== ctx.tenant.id) throw notFound('Factura no encontrada');
+  const html = billing.renderInvoiceHtml(d);
+  return { __file: { buf: Buffer.from(html, 'utf8'), filename: `comprobante-${d.invoice.id}.html`, mime: 'text/html; charset=utf-8' } };
+});
+route('POST', '/api/owner/invoices/request', { auth: 'owner', anyStatus: true }, (ctx) => {
+  const st = billing.billingStatus(ctx.tenant.id);
+  if (!st.module_enabled) throw forbidden('La facturación todavía no está habilitada');
+  const paymentId = Number(ctx.body.payment_id);
+  if (!paymentId) throw bad('Indicá el pago');
+  const payment = get('SELECT * FROM payments WHERE id=? AND tenant_id=? AND status=?', paymentId, ctx.tenant.id, 'approved');
+  if (!payment) throw notFound('Pago no encontrado');
+  const existing = get('SELECT id,status FROM invoices WHERE payment_id=? AND tenant_id=? AND status!=?', paymentId, ctx.tenant.id, 'void');
+  if (existing) return { ok: true, id: existing.id, status: existing.status, existing: true };
+  return billing.createInvoiceFromPayment({
+    tenantId: ctx.tenant.id,
+    payment,
+    source: 'client_request',
+    createdBy: ctx.user.id,
+    force: false,
+  });
+});
+
+
+// Aliases /api/me/* (mismo comportamiento que /api/owner/billing|invoices)
+route('GET', '/api/me/billing/status', { auth: 'owner', anyStatus: true }, (ctx) => billing.billingStatus(ctx.tenant.id));
+route('PUT', '/api/me/billing/profile', { auth: 'owner', anyStatus: true }, (ctx) => {
+  const st = billing.upsertProfile(ctx.tenant.id, ctx.body || {});
+  audit(ctx.user.id, ctx.tenant.id, 'billing.profile_updated', { complete: st.profile_complete });
+  return st;
+});
+route('GET', '/api/me/invoices', { auth: 'owner', anyStatus: true }, (ctx) => {
+  const st = billing.billingStatus(ctx.tenant.id);
+  if (!st.module_enabled) return { invoices: [], module_enabled: false };
+  return { invoices: all('SELECT id,number,series,status,source,total_cents,currency,coupon_code,issued_at,sent_at,created_at,payment_id FROM invoices WHERE tenant_id=? ORDER BY id DESC LIMIT 100', ctx.tenant.id), module_enabled: true };
+});
+route('GET', '/api/me/invoices/:id', { auth: 'owner', anyStatus: true }, (ctx) => {
+  const d = billing.invoiceDetail(Number(ctx.params.id));
+  if (!d || d.invoice.tenant_id !== ctx.tenant.id) throw notFound('Factura no encontrada');
+  return d;
+});
+route('GET', '/api/me/invoices/:id/pdf', { auth: 'owner', anyStatus: true }, (ctx) => {
+  const d = billing.invoiceDetail(Number(ctx.params.id));
+  if (!d || d.invoice.tenant_id !== ctx.tenant.id) throw notFound('Factura no encontrada');
+  return { __file: { buf: Buffer.from(billing.renderInvoiceHtml(d), 'utf8'), filename: `comprobante-${d.invoice.id}.html`, mime: 'text/html; charset=utf-8' } };
+});
+route('POST', '/api/me/invoices/request', { auth: 'owner', anyStatus: true }, (ctx) => {
+  const st = billing.billingStatus(ctx.tenant.id);
+  if (!st.module_enabled) throw forbidden('La facturación todavía no está habilitada');
+  const paymentId = Number(ctx.body.payment_id);
+  if (!paymentId) throw bad('Indicá el pago');
+  const payment = get('SELECT * FROM payments WHERE id=? AND tenant_id=? AND status=?', paymentId, ctx.tenant.id, 'approved');
+  if (!payment) throw notFound('Pago no encontrado');
+  const existing = get("SELECT id,status FROM invoices WHERE payment_id=? AND tenant_id=? AND status!='void'", paymentId, ctx.tenant.id);
+  if (existing) return { ok: true, id: existing.id, status: existing.status, existing: true };
+  return billing.createInvoiceFromPayment({ tenantId: ctx.tenant.id, payment, source: 'client_request', createdBy: ctx.user.id });
+});

@@ -60,7 +60,7 @@ const humanDetail = (action, detail) => {
   return Object.entries(d).map(([k, v]) => k + ': ' + v).join(' · ');
 };
 
-const TABS = [['cuentas', 'Cuentas'], ['sitio', 'Inicio web'], ['precios', 'Precios'], ['cupones', 'Cupones'], ['pagos', 'Pagos'], ['valoraciones', 'Valoraciones'], ['feriados', 'Feriados'], ['novedades', 'Novedades'], ['feedback', 'Feedback'], ['sistema', 'Sistema']];
+const TABS = [['cuentas', 'Cuentas'], ['sitio', 'Inicio web'], ['precios', 'Precios'], ['cupones', 'Cupones'], ['facturas', 'Facturas'], ['pagos', 'Pagos'], ['valoraciones', 'Valoraciones'], ['feriados', 'Feriados'], ['novedades', 'Novedades'], ['feedback', 'Feedback'], ['sistema', 'Sistema']];
 const loading = html`<p class="muted" style="padding:24px;text-align:center"><span class="spinner"></span></p>`;
 
 export async function renderAdmin() {
@@ -83,7 +83,7 @@ export async function renderAdmin() {
   load();
 }
 acts['a-tab'] = (el) => { A.tab = el.dataset.tab; renderAdmin(); };
-async function load() { try { await ({ cuentas, sitio, precios, cupones, pagos: paymentsCfg, valoraciones: reviewsAdmin, feriados, novedades, feedback, sistema })[A.tab](); } catch (e) { const { fail } = await import('./app.js'); fail(e); } }
+async function load() { try { await ({ cuentas, sitio, precios, cupones, facturas: facturasAdmin, pagos: paymentsCfg, valoraciones: reviewsAdmin, feriados, novedades, feedback, sistema })[A.tab](); } catch (e) { const { fail } = await import('./app.js'); fail(e); } }
 
 async function cuentas() {
   const { tenants } = await get('/api/admin/tenants' + (A.filter === 'all' ? '' : '?status=' + A.filter));
@@ -260,6 +260,7 @@ async function cupones() {
         <div class="coupon-stats">
           <div class="coupon-stat"><b>${coupons.length}</b><span>códigos</span></div>
           <div class="coupon-stat"><b>${coupons.filter((c) => statusOf(c).k === 'on').length}</b><span>activos</span></div>
+          <a class="btn btn-outline btn-sm" href="/api/admin/coupons/export.csv" download>Export CSV</a>
         </div>
       </div>
     </div>
@@ -284,6 +285,10 @@ async function cupones() {
           <div class="coupon-uses">
             <div class="row between"><span class="muted">Usos</span><span>${usesTxt(c)}</span></div>
             ${c.max_uses != null ? html`<div class="coupon-bar"><i style="width:${pctU}%"></i></div>` : ''}
+            <div class="row between muted" style="margin-top:6px;font-size:.85rem"><span>${c.unique_tenants || 0} clientes</span><span>Desc. acum. $ ${((c.total_discount_cents||0)/100).toLocaleString('es-AR')}</span></div>
+          </div>
+          <div class="row mt" style="gap:8px">
+            <button class="btn btn-outline btn-sm" data-act="coupon-uses" data-code="${c.code}" type="button">Historial</button>
           </div>
           ${c.note ? html`<p class="coupon-note">${c.note}</p>` : ''}
           <div class="row mt" style="gap:8px">
@@ -536,3 +541,69 @@ async function reviewsAdmin() {
 }
 acts['rev-ok'] = async (el) => { await post('/api/admin/reviews/' + el.dataset.id + '/approve'); toast('Publicada'); load(); };
 acts['rev-no'] = async (el) => { await post('/api/admin/reviews/' + el.dataset.id + '/reject'); toast('Eliminada'); load(); };
+
+
+async function facturasAdmin() {
+  const [settings, inv] = await Promise.all([
+    get('/api/admin/billing/settings'),
+    get('/api/admin/invoices'),
+  ]);
+  const rows = inv.invoices || [];
+  const moneyC = (c) => '$ ' + ((Number(c)||0)/100).toLocaleString('es-AR', { minimumFractionDigits: 2 });
+  patchEl('#a-body', html`
+  <div class="card mb">
+    <strong>Facturación (feature flag)</strong>
+    <p class="muted mb">Desactivada por defecto. Solo emití comprobantes cuando el emisor y el cliente tengan datos fiscales. <em>No es factura AFIP/ARCA</em>: es comprobante comercial del servicio.</p>
+    <div class="row" style="gap:16px;flex-wrap:wrap;align-items:center">
+      <label class="row" style="gap:8px;align-items:center"><input type="checkbox" data-act="bill-enable" ${settings.enabled ? 'checked' : ''}> Módulo activo</label>
+      <label class="row" style="gap:8px;align-items:center"><input type="checkbox" data-act="bill-auto" ${settings.auto_issue ? 'checked' : ''}> Auto-emitir al pagar (si el cliente completó datos)</label>
+    </div>
+    <form data-form="bill-issuer" class="mt">
+      <div class="grid2">
+        <div class="form-group"><label>Razón social emisor</label><input name="legal_name" value="${(settings.issuer&&settings.issuer.legal_name)||''}"></div>
+        <div class="form-group"><label>CUIT emisor</label><input name="tax_id" value="${(settings.issuer&&settings.issuer.tax_id)||''}"></div>
+        <div class="form-group"><label>Domicilio</label><input name="address" value="${(settings.issuer&&settings.issuer.address)||''}"></div>
+        <div class="form-group"><label>Email</label><input name="email" type="email" value="${(settings.issuer&&settings.issuer.email)||''}"></div>
+      </div>
+      <button class="btn btn-primary btn-sm" type="submit">Guardar emisor</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="row between mb"><strong>Comprobantes</strong>
+      <button class="btn btn-outline btn-sm" data-act="inv-new" type="button">Generar desde pago</button>
+    </div>
+    ${rows.length ? html`<div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Cliente</th><th>Estado</th><th>Origen</th><th>Total</th><th>Cupón</th><th></th></tr></thead><tbody>
+      ${rows.map((i) => html`<tr>
+        <td>${i.number ? (i.series + '-' + i.number) : '—'}</td>
+        <td>${i.tenant_name||i.tenant_id}</td>
+        <td><span class="mark-chip">${i.status}</span></td>
+        <td>${i.source}</td>
+        <td>${moneyC(i.total_cents)}</td>
+        <td>${i.coupon_code||'—'}</td>
+        <td class="row" style="gap:4px">
+          <a class="btn btn-outline btn-sm" href="/api/admin/invoices/${i.id}/pdf" target="_blank">Ver</a>
+          ${i.status==='draft'||i.status==='pending_data'?html`<button class="btn btn-sm btn-primary" data-act="inv-issue" data-id="${i.id}" type="button">Emitir</button>`:''}
+          ${i.status==='issued'?html`<button class="btn btn-sm" data-act="inv-send" data-id="${i.id}" type="button">Enviar</button>`:''}
+          ${i.status!=='void'?html`<button class="btn btn-danger btn-sm" data-act="inv-void" data-id="${i.id}" type="button">Anular</button>`:''}
+        </td>
+      </tr>`)}
+    </tbody></table></div>` : html`<p class="muted">Todavía no hay comprobantes.</p>`}
+  </div>`);
+}
+acts['bill-enable'] = async (el) => { await api('PUT', '/api/admin/billing/settings', { enabled: el.checked }); toast(el.checked ? 'Facturación activada' : 'Facturación desactivada'); load(); };
+acts['bill-auto'] = async (el) => { await api('PUT', '/api/admin/billing/settings', { auto_issue: el.checked }); toast('Auto-emisión actualizada'); };
+forms['bill-issuer'] = async (v) => { await api('PUT', '/api/admin/billing/settings', { issuer: v }); toast('Emisor guardado'); load(); };
+acts['inv-issue'] = async (el) => { await post('/api/admin/invoices/' + el.dataset.id + '/issue', { force: true }); toast('Emitida'); load(); };
+acts['inv-send'] = async (el) => { await post('/api/admin/invoices/' + el.dataset.id + '/send', {}); toast('Marcada como enviada'); load(); };
+acts['inv-void'] = async (el) => { if (!confirm('¿Anular comprobante?')) return; await post('/api/admin/invoices/' + el.dataset.id + '/void', {}); toast('Anulada'); load(); };
+acts['inv-new'] = async () => {
+  const payId = prompt('ID del pago (payments.id) a facturar:');
+  if (!payId) return;
+  await post('/api/admin/invoices', { payment_id: +payId, force: true });
+  toast('Comprobante creado'); load();
+};
+acts['coupon-uses'] = async (el) => {
+  const r = await get('/api/admin/coupons/' + encodeURIComponent(el.dataset.code) + '/uses');
+  const lines = (r.uses || []).map((u) => `${new Date(u.created_at).toLocaleString('es-AR')} · ${u.tenant_name || u.email} · ${u.context || ''} · desc $ ${((u.discount_cents||0)/100)}`).join('\n') || 'Sin usos';
+  openModal(html`<h3>Usos · ${el.dataset.code}</h3><p class="muted">${r.unique_tenants||0} clientes · total desc. $ ${((r.total_discount_cents||0)/100).toLocaleString('es-AR')}</p><pre style="white-space:pre-wrap;font-size:.85rem;max-height:50vh;overflow:auto">${lines}</pre>`);
+};

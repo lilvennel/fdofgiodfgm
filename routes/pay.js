@@ -7,6 +7,7 @@ const dom = require('../lib/domain');
 const mp = require('../lib/mp');
 const fc = require('../lib/fieldcrypto');
 const { intIn } = require('./common');
+const billing = require('../lib/billing');
 
 const TITLES = {
   plan_sub: 'Asist OK · Suscripción mensual', plan_once: 'Asist OK · Licencia pago único',
@@ -72,6 +73,10 @@ route('POST', '/api/pay/demo-confirm', { auth: 'owner', anyStatus: true }, (ctx)
 
 // Tras aprobar un cambio de plan en una suscripción mensual: la próxima renovación se cobra al precio del plan nuevo.
 async function afterApplied(p) {
+  try {
+    const fresh = get('SELECT * FROM payments WHERE id=?', p.id);
+    if (fresh) billing.onPaymentApproved(fresh);
+  } catch (e) { console.error('[billing] onPaymentApproved', e.message); }
   if (p.kind !== 'plan_upgrade' || !mp.enabled()) return;
   const t = get('SELECT * FROM tenants WHERE id=?', p.tenant_id);
   if (!t || t.plan !== 'sub' || !t.mp_preapproval_id) return;
@@ -101,7 +106,7 @@ async function processMp(topic, id) {
     const p = pa.external_reference && get('SELECT * FROM payments WHERE ext_ref=?', pa.external_reference);
     if (!p) return;
     run('UPDATE tenants SET mp_preapproval_id=? WHERE id=?', String(pa.id), p.tenant_id);
-    if (pa.status === 'authorized') dom.applyApprovedPayment(p.id, null);
+    if (pa.status === 'authorized') { if (dom.applyApprovedPayment(p.id, null)) await afterApplied(p); }
     else if (pa.status === 'paused') run("UPDATE tenants SET status='past_due' WHERE id=? AND status='active'", p.tenant_id);
     return;
   }

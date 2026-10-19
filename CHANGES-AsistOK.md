@@ -77,3 +77,28 @@ La 3.1.12 había perdido correcciones de seguridad de la 3.1.11 (eran ramas para
 - **H10** En producción no se crea un Super Admin con contraseña de ejemplo/débil (la app no arranca); aviso crítico si el existente la usa. `.env.example` ya no trae una clave.
 - **H11** docker-compose publica `127.0.0.1:3000`; `TRUST_PROXY=N` cuenta proxies y toma la IP desde la derecha de `X-Forwarded-For` (no falsificable por el cliente).
 - **Legales**: la plantilla se muestra como “texto provisional” y hay aviso crítico en Super Admin mientras no se reemplace.
+
+## v3.1.14 — Hardening + cupones métricas + facturación (feature flag)
+
+### Hardening
+- Bootstrap con `async bootstrap()` + try/catch; un solo `process.exit` en shutdown/`uncaughtException`
+- `assertProductionSafe()`: SECRET, APP_URL, DATA_DIR, bloquea `ALLOW_DEMO_PAYMENTS=1` en prod
+- Body limit por endpoint (ya existía `opts.limit`); serveStatic con path.normalize
+
+### Cupones
+- Listado admin con estado (active/paused/expired/exhausted), clientes únicos, total descontado
+- `GET /api/admin/coupons/:code/uses` historial
+- `GET /api/admin/coupons-export.csv`
+- `consumeCoupon` registra context, montos y payment_id
+
+### Facturación (off por defecto)
+- Tablas: customer_billing_profiles, invoices, invoice_items, feature_flags
+- Feature flags: `billing.enabled`, `billing.auto_issue`
+- Admin: settings emisor, listar/emitir/enviar/anular, PDF HTML
+- Owner: perfil fiscal, historial, solicitar factura, PDF
+- Auto-emisión solo si flag + perfil completo; si faltan datos → `pending_data`
+- Disclaimer: no es comprobante AFIP/ARCA
+
+### Pricing
+- Precios con terminación 999 (Esencial 39.999, Pro 59.999, Completo 99.999, extra 2.499)
+- Copy: «40 empleados incluidos · todo Esencial» / extras al mismo precio

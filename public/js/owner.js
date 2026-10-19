@@ -3,7 +3,7 @@ import { qrSvg } from './qr.js';
 import { startCheckout } from './app.js';
 
 const O = { tab: 'inicio', showNews: false, period: null, qrBranch: null, qrTimer: null, emps: [], branches: [] };
-const TABS_OWNER = [['inicio', 'Inicio'], ['notif', 'Notif.'], ['solicitudes', 'Solicitudes'], ['empleados', 'Empleados'], ['qr', 'Local'], ['sucursales', 'Sucursales'], ['reportes', 'Reportes'], ['config', 'Config']];
+const TABS_OWNER = [['inicio', 'Inicio'], ['notif', 'Notif.'], ['solicitudes', 'Solicitudes'], ['empleados', 'Empleados'], ['qr', 'Local'], ['sucursales', 'Sucursales'], ['reportes', 'Reportes'], ['facturas', 'Facturas'], ['config', 'Config']];
 const TABS_MANAGER = [['inicio', 'Inicio'], ['notif', 'Notif.'], ['solicitudes', 'Permisos'], ['empleados', 'Mi equipo'], ['mi-marcar', 'Marcar'], ['mi-permisos', 'Mis pedidos'], ['reportes', 'Reportes']];
 const TABS_HR = [['inicio', 'Inicio'], ['notif', 'Notif.'], ['solicitudes', 'Solicitudes'], ['empleados', 'Empleados'], ['mi-marcar', 'Marcar'], ['mi-permisos', 'Mis pedidos'], ['reportes', 'Reportes']];
 const tabsFor = () => {
@@ -74,7 +74,7 @@ function newsBlock(news) {
 
 async function loadTab() {
   clearInterval(O.qrTimer);
-  const tabs = { inicio: tabInicio, notif: tabNotif, solicitudes: tabSolicitudes, empleados: tabEmpleados, qr: tabQr, sucursales: tabSucursales, reportes: tabReportes, config: tabConfig, 'mi-marcar': tabMiMarcar, 'mi-permisos': tabMiPermisos };
+  const tabs = { inicio: tabInicio, notif: tabNotif, solicitudes: tabSolicitudes, empleados: tabEmpleados, qr: tabQr, sucursales: tabSucursales, reportes: tabReportes, facturas: tabFacturas, config: tabConfig, 'mi-marcar': tabMiMarcar, 'mi-permisos': tabMiPermisos };
   const fn = tabs[O.tab] || tabInicio;
   try {
     await fn();
@@ -1113,3 +1113,74 @@ forms['staff-permit'] = async (v) => {
   loadTab();
 };
 
+
+
+async function tabFacturas() {
+  const st = await get('/api/owner/billing/status');
+  const inv = st.module_enabled ? await get('/api/owner/invoices') : { invoices: [] };
+  const moneyC = (c) => '$ ' + ((Number(c)||0)/100).toLocaleString('es-AR', { minimumFractionDigits: 2 });
+  const missing = (st.missing || []).join(', ');
+  patchEl('#o-body', html`
+  <div class="card mb">
+    <strong>Datos fiscales</strong>
+    <p class="muted mb">Necesarios para emitir comprobantes del servicio. <em>No reemplazan una factura AFIP/ARCA</em>.</p>
+    ${!st.module_enabled ? html`<div class="alert alert-warn">La facturación aún no está habilitada por AsistOK.</div>` : ''}
+    ${st.module_enabled && !st.profile_complete ? html`<div class="alert alert-warn">Faltan datos: ${missing || 'completá el formulario'}</div>` : ''}
+    ${st.profile_complete ? html`<div class="alert alert-ok">Perfil fiscal completo</div>` : ''}
+    <form data-form="bill-profile">
+      <div class="grid2">
+        <div class="form-group"><label>Razón social / Nombre</label><input name="legal_name" required value="${(st.profile&&st.profile.legal_name)||''}"></div>
+        <div class="form-group"><label>CUIT / CUIL</label><input name="tax_id" required value="${(st.profile&&st.profile.tax_id)||''}"></div>
+        <div class="form-group"><label>Domicilio fiscal</label><input name="address" required value="${(st.profile&&st.profile.address)||''}"></div>
+        <div class="form-group"><label>Código postal</label><input name="zip" required value="${(st.profile&&st.profile.zip)||''}"></div>
+        <div class="form-group"><label>Ciudad</label><input name="city" value="${(st.profile&&st.profile.city)||''}"></div>
+        <div class="form-group"><label>Email de facturación</label><input name="email" type="email" required value="${(st.profile&&st.profile.email)||''}"></div>
+        <div class="form-group"><label>Tipo de persona</label>
+          <select name="person_type"><option value="juridica" ${(st.profile&&st.profile.person_type)==='juridica'?'selected':''}>Jurídica</option><option value="fisica" ${(st.profile&&st.profile.person_type)==='fisica'?'selected':''}>Física</option></select>
+        </div>
+        <div class="form-group"><label>Condición IVA</label>
+          <select name="tax_condition"><option value="CF">Consumidor final</option><option value="RI">Responsable inscripto</option><option value="MONO">Monotributo</option><option value="EX">Exento</option></select>
+        </div>
+        <div class="form-group"><label>Tipo de comprobante</label>
+          <select name="doc_type"><option value="recibo">Recibo / comprobante de servicio</option><option value="factura_x">Factura X (informativa)</option></select>
+        </div>
+      </div>
+      <button class="btn btn-primary" type="submit">Guardar datos fiscales</button>
+    </form>
+  </div>
+  <div class="card">
+    <strong>Historial de comprobantes</strong>
+    ${!(inv.invoices||[]).length ? html`<p class="muted mt">Todavía no hay comprobantes.</p>` : html`
+    <div class="table-wrap mt"><table class="table"><thead><tr><th>#</th><th>Estado</th><th>Total</th><th>Fecha</th><th></th></tr></thead><tbody>
+      ${(inv.invoices||[]).map((i) => html`<tr>
+        <td>${i.number ? (i.series+'-'+i.number) : '—'}</td>
+        <td><span class="mark-chip">${i.status}</span></td>
+        <td>${moneyC(i.total_cents)}</td>
+        <td>${i.issued_at ? new Date(i.issued_at).toLocaleDateString('es-AR') : new Date(i.created_at).toLocaleDateString('es-AR')}</td>
+        <td><a class="btn btn-outline btn-sm" href="/api/owner/invoices/${i.id}/pdf" target="_blank">Ver / PDF</a>
+          ${i.payment_id && i.status==='pending_data' ? html`<button class="btn btn-sm" data-act="inv-req" data-pay="${i.payment_id}" type="button">Reintentar</button>` : ''}
+        </td>
+      </tr>`)}
+    </tbody></table></div>`}
+    <p class="muted mt">Si tenés un pago aprobado y querés el comprobante, indicá el ID de pago:</p>
+    <form data-form="inv-request" class="row" style="gap:8px;align-items:flex-end">
+      <div class="form-group" style="margin:0"><label>payment_id</label><input name="payment_id" type="number" min="1" required></div>
+      <button class="btn btn-primary btn-sm" type="submit">Solicitar factura</button>
+    </form>
+  </div>`);
+}
+forms['bill-profile'] = async (v) => {
+  await api('PUT', '/api/owner/billing/profile', v);
+  toast('Datos fiscales guardados');
+  renderOwner();
+};
+forms['inv-request'] = async (v) => {
+  const r = await post('/api/owner/invoices/request', { payment_id: +v.payment_id });
+  toast(r.status === 'pending_data' ? 'Creada pendiente de datos fiscales' : 'Comprobante generado');
+  renderOwner();
+};
+acts['inv-req'] = async (el) => {
+  await post('/api/owner/invoices/request', { payment_id: +el.dataset.pay });
+  toast('Solicitud enviada');
+  renderOwner();
+};

@@ -14,6 +14,7 @@ const { isoDate } = require('../lib/hours');
 const { clean, emailOk, intIn, isoDateOk, decodeUpload } = require('./common');
 const { sanitizeHtml } = require('../lib/sanitize');
 const fc = require('../lib/fieldcrypto');
+const billing = require('../lib/billing');
 
 const S = { auth: 'superadmin' };
 
@@ -214,7 +215,32 @@ route('POST', '/api/admin/prices/schedule', S, (ctx) => {
 route('DELETE', '/api/admin/prices/schedule', S, (ctx) => { setSetting('price_schedule', null); audit(ctx.user.id, null, 'admin.price_schedule_cancel'); return { ok: true }; });
 
 // ---------- Cupones ----------
-route('GET', '/api/admin/coupons', S, () => ({ coupons: all('SELECT * FROM coupons ORDER BY code') }));
+function adminCouponsCsv() {
+  const rows = billing.listCouponsAdmin({ status: 'all' });
+  const head = ['code','name','pct','state','max_uses','uses_count','unique_tenants','total_discount_cents','expires_at','active','plan_tiers'];
+  const lines = [head.join(',')];
+  for (const c of rows) {
+    lines.push([c.code, JSON.stringify(c.name || ''), c.pct, c.state, c.max_uses ?? '', c.uses_count || 0, c.unique_tenants || 0, c.total_discount_cents || 0, c.expires_at || '', c.active, JSON.stringify(c.plan_tiers || '')].join(','));
+  }
+  return { __file: { buf: Buffer.from(lines.join('\n'), 'utf8'), filename: 'cupones.csv', mime: 'text/csv; charset=utf-8' } };
+}
+
+route('GET', '/api/admin/coupons', S, (ctx) => {
+  const status = ctx.query.status || 'all';
+  return { coupons: billing.listCouponsAdmin({ status }) };
+});
+route('GET', '/api/admin/coupons-export.csv', S, () => adminCouponsCsv());
+route('GET', '/api/admin/coupons/export.csv', S, () => adminCouponsCsv());
+route('GET', '/api/admin/coupons/:code', S, (ctx) => {
+  const st = billing.couponStats(String(ctx.params.code || '').toUpperCase());
+  if (!st) throw notFound('Cupón no encontrado');
+  return st;
+});
+route('GET', '/api/admin/coupons/:code/uses', S, (ctx) => {
+  const st = billing.couponStats(String(ctx.params.code || '').toUpperCase());
+  if (!st) throw notFound('Cupón no encontrado');
+  return { code: st.coupon.code, uses: st.uses, unique_tenants: st.unique_tenants, total_discount_cents: st.total_discount_cents };
+});
 route('POST', '/api/admin/coupons', S, (ctx) => {
   const code = clean(ctx.body.code, 24).toUpperCase();
   if (!/^[A-Z0-9_-]{3,24}$/.test(code)) throw bad('El código debe tener 3 a 24 letras o números');
@@ -287,7 +313,36 @@ route('PUT', '/api/admin/payments-config', S, (ctx) => {
   audit(ctx.user.id, null, 'admin.payments_config', { provider: 'mercadopago' });
   return { ok: true, provider: 'mercadopago' };
 });
+
 route('DELETE', '/api/admin/coupons/:code', S, (ctx) => { run('DELETE FROM coupons WHERE code=?', ctx.params.code.toUpperCase()); return { ok: true }; });
+route('PATCH', '/api/admin/coupons/:code', S, (ctx) => {
+  const code = String(ctx.params.code || '').toUpperCase();
+  const c = get('SELECT * FROM coupons WHERE code=?', code);
+  if (!c) throw notFound('Cupón no encontrado');
+  const b = ctx.body || {};
+  const pct = b.pct != null ? Number(b.pct) : c.pct;
+  const active = b.active != null ? (b.active ? 1 : 0) : c.active;
+  const max_uses = b.max_uses !== undefined ? (b.max_uses == null || b.max_uses === '' ? null : Number(b.max_uses)) : c.max_uses;
+  const note = b.note != null ? String(b.note).slice(0, 200) : c.note;
+  const name = b.name != null ? String(b.name).slice(0, 120) : c.name;
+  const plan_tiers = b.plan_tiers !== undefined ? b.plan_tiers : c.plan_tiers;
+  run('UPDATE coupons SET pct=?, active=?, max_uses=?, note=?, name=?, plan_tiers=? WHERE code=?', pct, active, max_uses, note, name, plan_tiers, code);
+  audit(ctx.user.id, null, 'admin.coupon_patch', { code });
+  return { ok: true, coupon: get('SELECT * FROM coupons WHERE code=?', code) };
+});
+route('POST', '/api/admin/coupons/:code/duplicate', S, (ctx) => {
+  const code = String(ctx.params.code || '').toUpperCase();
+  const c = get('SELECT * FROM coupons WHERE code=?', code);
+  if (!c) throw notFound('Cupón no encontrado');
+  let neu = (ctx.body && ctx.body.code) ? String(ctx.body.code).trim().toUpperCase() : (code + '-COPY');
+  neu = neu.replace(/[^A-Z0-9_-]/g, '').slice(0, 32) || (code + '2');
+  if (get('SELECT 1 FROM coupons WHERE code=?', neu)) throw bad('Ese código ya existe');
+  run(`INSERT INTO coupons(code,pct,months,scope,active,max_uses,uses_count,expires_at,duration_n,duration_unit,starts_at,note,applies_to,per_email_once,plan_tiers,name,total_discount_cents)
+       VALUES(?,?,?,?,?,0,0,?,?,?,?,?,?,?,?,?,0)`,
+    neu, c.pct, c.months, c.scope, 1, c.max_uses, c.expires_at, c.duration_n, c.duration_unit, c.starts_at, c.note, c.applies_to, c.per_email_once, c.plan_tiers, c.name || null);
+  audit(ctx.user.id, null, 'admin.coupon_duplicate', { from: code, to: neu });
+  return { ok: true, code: neu };
+});
 
 // ---------- Feriados ----------
 const yearOf = (v) => intIn(v ?? new Date().getFullYear(), 2020, 2100, 'Año');
@@ -350,3 +405,97 @@ route('GET', '/api/admin/backup/file/:name', S, (ctx) => {
   return { __file: { buf: fs.readFileSync(f), filename: ctx.params.name, mime: 'application/octet-stream' } };
 });
 route('GET', '/api/admin/audit', S, () => ({ audit: all('SELECT a.*, t.name tenant FROM audit a LEFT JOIN tenants t ON t.id=a.tenant_id ORDER BY a.id DESC LIMIT 200') }));
+
+
+// ---------- Facturación (feature flag; off por defecto) ----------
+route('GET', '/api/admin/billing/settings', S, () => ({
+  enabled: billing.flagGet(billing.BILLING_FLAG, false),
+  auto_issue: billing.flagGet(billing.AUTO_ISSUE_FLAG, false),
+  issuer: billing.issuerSettings(),
+}));
+route('PUT', '/api/admin/billing/settings', S, (ctx) => {
+  if (ctx.body.enabled != null) billing.flagSet(billing.BILLING_FLAG, !!ctx.body.enabled);
+  if (ctx.body.auto_issue != null) billing.flagSet(billing.AUTO_ISSUE_FLAG, !!ctx.body.auto_issue);
+  if (ctx.body.issuer && typeof ctx.body.issuer === 'object') {
+    const cur = billing.issuerSettings();
+    const next = { ...cur, ...ctx.body.issuer };
+    require('../lib/db').setSetting('billing_issuer', next);
+  }
+  audit(ctx.user.id, null, 'admin.billing_settings', { enabled: billing.flagGet(billing.BILLING_FLAG, false) });
+  return { ok: true, enabled: billing.flagGet(billing.BILLING_FLAG, false), auto_issue: billing.flagGet(billing.AUTO_ISSUE_FLAG, false), issuer: billing.issuerSettings() };
+});
+route('GET', '/api/admin/invoices', S, (ctx) => {
+  const st = ctx.query.status;
+  const rows = st && st !== 'all'
+    ? all(`SELECT i.*, t.name tenant_name FROM invoices i JOIN tenants t ON t.id=i.tenant_id WHERE i.status=? ORDER BY i.id DESC LIMIT 300`, st)
+    : all(`SELECT i.*, t.name tenant_name FROM invoices i JOIN tenants t ON t.id=i.tenant_id ORDER BY i.id DESC LIMIT 300`);
+  return { invoices: rows };
+});
+route('GET', '/api/admin/invoices/:id', S, (ctx) => {
+  const d = billing.invoiceDetail(Number(ctx.params.id));
+  if (!d) throw notFound('Factura no encontrada');
+  return d;
+});
+route('POST', '/api/admin/invoices', S, (ctx) => {
+  const paymentId = Number(ctx.body.payment_id);
+  const tenantId = Number(ctx.body.tenant_id);
+  if (!paymentId && !tenantId) throw bad('Indicá payment_id o tenant_id');
+  const payment = paymentId ? get('SELECT * FROM payments WHERE id=?', paymentId) : null;
+  if (paymentId && !payment) throw notFound('Pago no encontrado');
+  const tid = payment ? payment.tenant_id : tenantId;
+  const r = billing.createInvoiceFromPayment({
+    tenantId: tid,
+    payment,
+    source: 'manual',
+    createdBy: ctx.user.id,
+    force: !!ctx.body.force,
+    notes: String(ctx.body.notes || '').slice(0, 500),
+  });
+  if (!r.ok && r.reason === 'BILLING_DISABLED' && !ctx.body.force) {
+    // Super Admin puede forzar aunque el flag esté off
+    const forced = billing.createInvoiceFromPayment({
+      tenantId: tid, payment, source: 'manual', createdBy: ctx.user.id, force: true, notes: ctx.body.notes,
+    });
+    return forced;
+  }
+  return r;
+});
+route('POST', '/api/admin/invoices/:id/issue', S, (ctx) => {
+  const inv = billing.issueInvoice(Number(ctx.params.id), { force: !!ctx.body.force, userId: ctx.user.id });
+  if (!inv) throw notFound('Factura no encontrada');
+  return { invoice: inv };
+});
+route('POST', '/api/admin/invoices/:id/send', S, (ctx) => {
+  const inv = billing.markSent(Number(ctx.params.id), ctx.user.id);
+  if (!inv) throw notFound('Factura no encontrada');
+  // Envío de mail opcional (Resend) — no falla si no hay mailer
+  try {
+    const mailer = require('../lib/mailer');
+    const d = billing.invoiceDetail(inv.id);
+    const to = d?.profile?.email;
+    if (to && cfg.MAIL_CONFIGURED && mailer.sendMail) {
+      try { mailer.sendMail(to, `Comprobante AsistOK ${inv.series}-${inv.number}`, billing.renderInvoiceHtml(d)); } catch {}
+    }
+  } catch (e) { console.error('[billing] mail', e.message); }
+  return { invoice: inv };
+});
+route('POST', '/api/admin/invoices/:id/void', S, (ctx) => {
+  const inv = billing.voidInvoice(Number(ctx.params.id), ctx.user.id);
+  if (!inv) throw notFound('Factura no encontrada');
+  return { invoice: inv };
+});
+route('GET', '/api/admin/invoices/:id/pdf', S, (ctx) => {
+  const d = billing.invoiceDetail(Number(ctx.params.id));
+  if (!d) throw notFound('Factura no encontrada');
+  const html = billing.renderInvoiceHtml(d);
+  return { __file: { buf: Buffer.from(html, 'utf8'), filename: `factura-${d.invoice.series || 'R'}-${d.invoice.number || d.invoice.id}.html`, mime: 'text/html; charset=utf-8' } };
+});
+route('POST', '/api/admin/tenants/:id/billing/force', S, (ctx) => {
+  const tid = Number(ctx.params.id);
+  if (!get('SELECT 1 FROM tenants WHERE id=?', tid)) throw notFound('Negocio no encontrado');
+  const paymentId = ctx.body.payment_id ? Number(ctx.body.payment_id) : null;
+  const payment = paymentId ? get('SELECT * FROM payments WHERE id=? AND tenant_id=?', paymentId, tid) : null;
+  return billing.createInvoiceFromPayment({
+    tenantId: tid, payment, source: 'manual', createdBy: ctx.user.id, force: true, notes: String(ctx.body.notes || '').slice(0, 500),
+  });
+});

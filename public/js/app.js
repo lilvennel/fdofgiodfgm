@@ -263,11 +263,11 @@ export async function showAuth(message, opts = {}) {
             <span class="price-trial-pill">1 mes gratis</span>
             <h3>Esencial</h3>
             <div class="price" data-m="${c.prices.esencial_m ?? c.prices.sub}" data-y="${c.prices.esencial_y ?? c.prices.once}">${money(c.prices.esencial_m ?? c.prices.sub)} <small>/ mes</small></div>
-            <p class="muted" style="font-size:.8rem"><strong>${c.free_employees ?? 40} empleados incluidos</strong> · 1 sucursal<br><span style="font-size:.75rem">Podés sumar más cuando los necesites (${money(c.prices.extra)} c/u, pago único)</span></p>
+            <p class="muted" style="font-size:.8rem"><strong>${c.free_employees ?? 40} empleados incluidos · todo Esencial</strong> · 1 sucursal<br><span style="font-size:.75rem">Extras al mismo precio (${money(c.prices.extra)} c/u, pago único)</span></p>
             <ul>
               <li>Marcación panel + GPS</li>
               <li>QR opcional en puerta</li>
-              <li>Horas y extras del mes</li>
+              <li>Horas, extras y reportes del mes</li>
               <li>Notificaciones al dueño</li>
             </ul>
             <button class="btn btn-primary btn-block" type="button" data-act="pick-plan" data-tier="esencial" data-plan-billing data-billing="sub">Probar Esencial</button>
@@ -303,7 +303,7 @@ export async function showAuth(message, opts = {}) {
           <h3 style="font-size:1rem;margin-bottom:10px">Módulos y extras (pago único)</h3>
           <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid #e2e8f0;font-size:.92rem"><span>Multi-sucursal</span><strong>${money(c.prices.mod_suc)}</strong></div>
           <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid #e2e8f0;font-size:.92rem"><span>Recibos de sueldo</span><strong>${money(c.prices.mod_rec)}</strong></div>
-          <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid #e2e8f0;font-size:.92rem;gap:12px"><span>Empleado extra <span class="muted" style="font-size:.8rem">(cuando superás los incluidos del plan)</span></span><strong style="white-space:nowrap">${money(c.prices.extra)} c/u</strong></div>
+          <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid #e2e8f0;font-size:.92rem;gap:12px"><span>Empleado extra <span class="muted" style="font-size:.8rem">(${c.free_employees ?? 40} incluidos · todo Esencial)</span></span><strong style="white-space:nowrap">${money(c.prices.extra)} c/u</strong></div>
         </div>
       </div>
     </section>

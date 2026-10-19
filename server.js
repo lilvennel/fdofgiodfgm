@@ -158,18 +158,38 @@ server.requestTimeout = 30_000;
 server.headersTimeout = 15_000;
 server.keepAliveTimeout = 65_000; // mayor que el de nginx/Railway (60 s) para evitar 502 intermitentes
 
-ensureAdmin().then(() => warnings.checkAdmin()).then(() => {
-  warnings.printBoot();
-  jobs.start();
-  server.listen(cfg.PORT, cfg.HOST, () => console.log(`AsistOK escuchando en ${cfg.APP_URL} (${cfg.HOST}:${cfg.PORT}, ${cfg.NODE_ENV})`));
-});
-for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { console.log('Cerrando…'); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 5000).unref(); });
-// Errores que nadie capturó: se registran siempre. Una promesa rechazada suelta no tumba el servidor;
-// una excepción no capturada deja el proceso en estado dudoso, así que se registra y se reinicia limpio (Docker/systemd lo levantan).
+async function bootstrap() {
+  try {
+    cfg.assertProductionSafe();
+    await ensureAdmin();
+    await warnings.checkAdmin();
+    warnings.printBoot();
+    jobs.start();
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(cfg.PORT, cfg.HOST, () => {
+        console.log(`AsistOK escuchando en ${cfg.APP_URL} (${cfg.HOST}:${cfg.PORT}, ${cfg.NODE_ENV})`);
+        resolve();
+      });
+    });
+  } catch (e) {
+    console.error('[boot] falló el arranque:', e && e.stack ? e.stack : e);
+    process.exit(1);
+  }
+}
+bootstrap();
+
+let shuttingDown = false;
+function shutdown(code) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try { server.close(() => process.exit(code)); } catch { process.exit(code); }
+  setTimeout(() => process.exit(code), 5000).unref();
+}
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { console.log('Cerrando…'); shutdown(0); });
 process.on('unhandledRejection', (err) => console.error('[unhandledRejection]', err));
 process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err);
-  setTimeout(() => process.exit(1), 200).unref();
-  try { server.close(() => process.exit(1)); } catch { process.exit(1); }
+  shutdown(1);
 });
 module.exports = { server };
