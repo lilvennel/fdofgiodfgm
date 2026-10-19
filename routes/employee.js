@@ -46,23 +46,21 @@ route('GET', '/api/me/inbox', E, (ctx) => {
 });
 route('GET', '/api/me/calendar', E, (ctx) => {
   const uid = ctx.user.id;
-  const upcoming = all("SELECT date,name,kind FROM holidays WHERE date >= date('now','localtime') AND date <= date('now','localtime','+60 days') ORDER BY date LIMIT 15");
-  const vac = all("SELECT type,from_date,to_date,status FROM permits WHERE user_id=? AND status='approved' AND to_date >= date('now','localtime') ORDER BY from_date LIMIT 10", uid);
+  const today = H.isoDate(Date.now()), in60 = H.isoDate(Date.now() + 60 * 864e5); // hora de Argentina, no la del servidor
+  const upcoming = all("SELECT date,name,kind FROM holidays WHERE date >= ? AND date <= ? ORDER BY date LIMIT 15", today, in60);
+  const vac = all("SELECT type,from_date,to_date,status FROM permits WHERE user_id=? AND status='approved' AND to_date >= ? ORDER BY from_date LIMIT 10", uid, today);
   const shift = ctx.user.shift_start || ctx.tenant.schedule_start || null;
   const shiftEnd = ctx.tenant.schedule_end || null;
   return { holidays: upcoming, vacations: vac, shift_start: shift, shift_end: shiftEnd, hire_date: ctx.user.hire_date || null };
 });
 route('GET', '/api/me/payroll-summary', E, (ctx) => {
   const uid = ctx.user.id;
-  const period = (() => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); })();
+  const period = H.currentPeriod();
   const hours = (() => {
     try {
-      const H = require('../lib/hours');
-const alerts = require('../lib/alerts');
-      // simplified: count marks this month
-      const from = period + '-01';
-      const rows = all("SELECT kind,ts FROM marks WHERE user_id=? AND ts >= ? ORDER BY ts", uid, Date.parse(from + 'T00:00:00-03:00') || 0);
-      return { marks: rows.length, period };
+      const r = H.periodRange(period);
+      const n = get("SELECT COUNT(*) n FROM marks WHERE user_id=? AND ts >= ? AND ts < ?", uid, r.from, r.to).n;
+      return { marks: n, period };
     } catch { return { marks: 0, period }; }
   })();
   const recibos = all("SELECT id,period,title,sign_status,created_at FROM docs WHERE user_id=? AND kind='recibo' ORDER BY period DESC LIMIT 12", uid);
@@ -91,12 +89,10 @@ route('POST', '/api/me/requests', E, (ctx) => {
   return { ok: true, id: rid };
 });
 route('GET', '/api/me/holidays', E, (ctx) => {
-  const now = new Date();
-  const y = now.getFullYear(), m = String(now.getMonth() + 1).padStart(2, '0');
-  const prefix = `${y}-${m}`;
+  const prefix = H.currentPeriod();
   const rows = all("SELECT date,name,kind FROM holidays WHERE substr(date,1,7)=? ORDER BY date", prefix);
-  // next 45 days
-  const upcoming = all("SELECT date,name,kind FROM holidays WHERE date >= date('now','localtime') AND date <= date('now','localtime','+45 days') ORDER BY date LIMIT 8");
+  // próximos 45 días (hora de Argentina)
+  const upcoming = all("SELECT date,name,kind FROM holidays WHERE date >= ? AND date <= ? ORDER BY date LIMIT 8", H.isoDate(Date.now()), H.isoDate(Date.now() + 45 * 864e5));
   return { month: rows, upcoming };
 });
 route('GET', '/api/me/state', E, (ctx) => {
@@ -343,15 +339,15 @@ route('PATCH', '/api/me/profile', E, (ctx) => {
   const personal_email = pick('personal_email', 120);
   const notes = pick('notes', 400);
   const emg_rel = b.emg_rel !== undefined ? clean(b.emg_rel, 40) : (u.emg_rel || '');
-  const blood_type = b.blood_type !== undefined ? clean(b.blood_type, 8) : (u.blood_type || '');
-  const obra_social = b.obra_social !== undefined ? clean(b.obra_social, 80) : (u.obra_social || '');
+  const blood_type = pick('blood_type', 8);
+  const obra_social = pick('obra_social', 80);
   const birthday = b.birthday !== undefined ? (b.birthday || null) : u.birthday;
   run(`UPDATE users SET phone=?,address=?,birthday=?,emg_name=?,emg_rel=?,emg_phone=?,
     dni=?,personal_email=?,blood_type=?,obra_social=?,notes=? WHERE id=?`,
     fc.encrypt(phone || null), fc.encrypt(address || null), birthday,
     fc.encrypt(emg_name || null), emg_rel || null, fc.encrypt(emg_phone || null),
     fc.encrypt(dni || null), fc.encrypt(personal_email || null),
-    blood_type || null, obra_social || null, fc.encrypt(notes || null),
+    fc.encrypt(blood_type || null), fc.encrypt(obra_social || null), fc.encrypt(notes || null),
     ctx.user.id);
   return { ok: true };
 });

@@ -91,8 +91,9 @@ export async function showAuth(message, opts = {}) {
   }
   const c = S.cfg || {}, h = c.hero || {}, ct = c.contact || {};
   const reg = authTab === 'reg', forgot = authTab === 'forgot';
-  const waHref = ct.wa_link || 'https://wa.me/5491100000000';
-  const wa = ct.wa_link ? html`<a href="${ct.wa_link}" target="_blank" rel="noopener">${ct.wa_label || 'WhatsApp'}</a>` : html`<a href="${waHref}" target="_blank" rel="noopener">WhatsApp</a>`;
+  // Solo se muestra WhatsApp si el Super Admin cargó un link real (Inicio web → Contacto): no hay número de ejemplo.
+  const waHref = ct.wa_link || '';
+  const wa = waHref ? html`<a href="${waHref}" target="_blank" rel="noopener">${ct.wa_label || 'WhatsApp'}</a>` : '';
   const loginForm = forgot ? html`
     <form data-form="forgot"><p class="muted mb">Ingresá tu email y te enviamos un link para elegir una nueva contraseña.</p>
       ${eyeless('f-email', 'Email', 'email', 'required autocomplete="email"')}
@@ -395,7 +396,7 @@ export async function showAuth(message, opts = {}) {
         </div>
       </div>
     </footer>
-    <a class="wa-fab" href="${waHref}" target="_blank" rel="noopener" title="WhatsApp" aria-label="WhatsApp">💬</a>
+    ${waHref ? html`<a class="wa-fab" href="${waHref}" target="_blank" rel="noopener" title="WhatsApp" aria-label="WhatsApp">💬</a>` : ''}
   </div>`);
   ensureCookieUI();
   if (reg && typeof window !== 'undefined') {
@@ -557,13 +558,13 @@ function paymentScreen(statusMsg) {
     <button class="btn btn-outline btn-block mt" data-act="logout" type="button">Cerrar sesión</button>
   </div></div>`);
 }
-export async function startCheckout(kind, qty) {
-  const r = await post('/api/pay/checkout', { kind, qty });
+export async function startCheckout(kind, qty, tier) {
+  const r = await post('/api/pay/checkout', { kind, qty, tier });
   if (r.demo) { location.href = r.url; return; }
   if (r.url) { location.href = r.url; return; }
   toast(r.note || 'No se pudo iniciar el pago');
 }
-acts.checkout = (el) => startCheckout(el.dataset.kind, el.dataset.qty ? Number(el.dataset.qty) : undefined);
+acts.checkout = (el) => startCheckout(el.dataset.kind, el.dataset.qty ? Number(el.dataset.qty) : undefined, el.dataset.tier);
 
 function demoPayScreen(ref) {
   render(html`<div class="demo-banner">MODO DE PRUEBA · no se cobra nada</div><div class="page-center"><div class="form-card card" style="text-align:center">

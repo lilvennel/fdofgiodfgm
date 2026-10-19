@@ -158,7 +158,11 @@ test('horas extra y reporte CSV (con protección contra inyección de fórmulas)
 
 test('permisos: vacaciones limitadas por LCT, aprobación y descuento de días', async () => {
   const e = state.emp, o = state.owner;
-  await o.post('/api/owner/plan/upgrade', { plan_tier: 'pro' }); // permisos y vacaciones son del plan Pro
+  // permisos y vacaciones son del plan Pro: subir de plan NO es gratis, se paga la diferencia (demo)
+  assert.equal((await o.post('/api/owner/plan/upgrade', { plan_tier: 'pro' })).status, 402);
+  const up = await o.post('/api/pay/checkout', { kind: 'plan_upgrade', tier: 'pro' });
+  assert.equal(up.status, 200);
+  await o.post('/api/pay/demo-confirm', { ref: new URL(up.data.url).searchParams.get('demo_pay') });
   let r = await e.get('/api/me/vacation');
   assert.equal(r.data.entitled, 14);
   r = await e.post('/api/me/permits', { type: 'vacaciones', from: '2026-12-01', to: '2026-12-30' });

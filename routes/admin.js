@@ -20,7 +20,7 @@ const S = { auth: 'superadmin' };
 route('GET', '/api/admin/stats', S, () => {
   const p = dom.getPrices();
   const active = all("SELECT * FROM tenants WHERE status='active'");
-  const mrr = active.filter((t) => t.plan === 'sub').reduce((a, t) => a + Math.round(p.sub * (1 - (t.discount_months > 0 ? t.discount_pct : 0) / 100)), 0);
+  const mrr = active.filter((t) => t.plan === 'sub').reduce((a, t) => a + Math.round((p[(t.plan_tier || 'esencial') + '_m'] ?? p.sub) * (1 - (dom.tenantHasDiscount(t) ? t.discount_pct : 0) / 100)), 0);
   const d = new Date(); const monthStart = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
   return {
     tenants_total: get('SELECT COUNT(*) n FROM tenants').n,
@@ -47,6 +47,7 @@ route('GET', '/api/admin/tenants', S, (ctx) => {
   return {
     tenants: rows.map((r) => ({
       ...r,
+      owner_email: fc.decryptEmail(r.owner_email) || r.owner_email,
       trial: r.status === 'active' && r.paid_until && !r.mp_preapproval_id
         && r.paid_until > now && (now - (r.created_at || 0)) < 40 * 864e5,
     })),
@@ -76,7 +77,7 @@ route('POST', '/api/admin/tenants/:id/reset-owner-password', S, async (ctx) => {
   run('UPDATE users SET pass_hash=?, must_change_pw=1 WHERE id=?', await sec.hashPassword(tmp), o.id);
   sec.destroyUserSessions(o.id);
   audit(ctx.user.id, t.id, 'admin.owner_pw_reset');
-  return { email: o.email, temp_password: tmp };
+  return { email: fc.decryptEmail(o.email) || o.email, temp_password: tmp };
 });
 
 /** Exportación completa de un negocio (para responder a la AAIP u orden judicial) */

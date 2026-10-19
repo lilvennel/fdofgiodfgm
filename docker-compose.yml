@@ -1,10 +1,12 @@
 services:
   asistok:
     build: .
+    init: true
     restart: unless-stopped
     env_file: .env
     environment:
       DATA_DIR: /data
+      HOST: 0.0.0.0   # dentro del contenedor; hacia afuera solo se publica 127.0.0.1 (ver ports)
     volumes:
       - ./data:/data
     ports:

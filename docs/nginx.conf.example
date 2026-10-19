@@ -1,9 +1,21 @@
 # /etc/nginx/sites-available/asistok   (luego: certbot --nginx -d tudominio.com)
+# Limita intentos contra login/registro además del límite interno de la app
+limit_req_zone $binary_remote_addr zone=asistok_auth:10m rate=10r/m;
+
 server {
     server_name tudominio.com;
-    # La app escucha en 127.0.0.1:3000 (docker-compose ya lo publica así). Cerrá el puerto 3000 en el firewall.
-    # Si hay otro proxy delante de nginx (p. ej. Cloudflare), poné TRUST_PROXY=2 y dejá que nginx agregue ($proxy_add_x_forwarded_for).
+    # La app escucha en 127.0.0.1:3000 (por defecto, o HOST=127.0.0.1 en el .env; en Docker, docker-compose lo publica solo en local). Cerrá el puerto 3000 en el firewall.
+    # Si hay otro proxy delante de nginx (p. ej. Cloudflare), poné TRUST_PROXY=2.
     client_max_body_size 8m;
+    server_tokens off;
+
+    location /api/auth/ {
+        limit_req zone=asistok_auth burst=15 nodelay;
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
     location / {
         proxy_pass http://127.0.0.1:3000;
         proxy_set_header Host $host;

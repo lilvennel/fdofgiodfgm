@@ -1,4 +1,4 @@
-# Asist OK 3.1 (ex Asist OK 3.0)
+# Asist OK 3.1.13
 
 Sistema SaaS de control de asistencia para negocios argentinos: **QR dinámico + geolocalización**, horas y extras con feriados, permisos y vacaciones (LCT), certificados, recibos con firma, multi-sucursal, reportes y cobro con **Mercado Pago**. Multi-negocio: cada cliente ve solo lo suyo.
 
@@ -8,9 +8,9 @@ Sistema SaaS de control de asistencia para negocios argentinos: **QR dinámico +
 ## 1. Probarlo en tu PC (2 minutos)
 
 ```bash
-cp .env.example .env        # editá ADMIN_EMAIL y ADMIN_PASSWORD; dejá ALLOW_DEMO_PAYMENTS=1 para probar sin Mercado Pago
+cp .env.example .env        # editá ADMIN_EMAIL y ADMIN_PASSWORD; para probar sin Mercado Pago poné ALLOW_DEMO_PAYMENTS=1 y REQUIRE_EMAIL_VERIFICATION=0 (SOLO en tu PC)
 node server.js              # abrí http://localhost:3000
-npm test                    # 54 tests de integración
+npm test                    # 34 tests de integración
 ```
 Entrá con el email/contraseña de `ADMIN_*` para ver el Super Admin. Para ver el flujo del cliente: **Registrarse** → pago de prueba → panel.
 
@@ -29,6 +29,8 @@ Para recorrer todo el producto: `docs/CHECKLIST.md`.
 
 ## 2. Publicarlo (elegí una opción)
 
+> **Guía paso a paso: `docs/DESPLIEGUE.md`.** Para crear el `.env` con claves seguras: `node scripts/gen-env.js https://tudominio.com admin@tudominio.com`.
+
 Requisito del hosting: **Node.js 22.13 o superior** y **disco persistente** (ahí viven la base y los archivos). El hosting compartido "solo PHP" no sirve.
 
 **A) VPS (DonWeb, Hostinger VPS, DigitalOcean, etc.) – recomendado**
@@ -36,7 +38,7 @@ Requisito del hosting: **Node.js 22.13 o superior** y **disco persistente** (ah�
 2. Instalá Node 22 y levantalo con systemd (`docs/asistok.service.example`) o Docker (`docker compose up -d`).
 3. Nginx + HTTPS: `docs/nginx.conf.example` y `certbot --nginx`.
 
-**B) Render / Railway / Fly.io**: creá un servicio desde esta carpeta (usa el `Dockerfile`), agregá un **volumen persistente montado en `/data`**, cargá las variables del `.env.example` y asigná tu dominio.
+**B) Render / Railway / Fly.io**: creá un servicio desde esta carpeta (usa el `Dockerfile`), agregá un **volumen persistente montado en `/data`**, cargá las variables del `.env.example` y asigná tu dominio. En **Railway** agregá además la variable `RAILWAY_RUN_UID=0` (los volúmenes se montan como root y sin eso la app no puede escribir).
 
 **C) cPanel con "Setup Node.js App"**: elegí Node 22, archivo de inicio `server.js`, cargá las variables de entorno desde el panel.
 
@@ -54,7 +56,7 @@ Cómo cobra: suscripción mensual = *preapproval* (débito recurrente); pago ún
 - [ ] `APP_URL` con `https://` y `TRUST_PROXY=1` si hay proxy.
 - [ ] Textos legales: ya hay plantilla completa (Ley 25.326). En **Super Admin → Inicio web** completá razón social, CUIT y domicilio; guardá. Exportación/eliminación de datos de empleados disponible en ficha del empleado y en Cuentas (Super Admin).
 - [ ] Feriados: se **calculan solos por ley** para cualquier año (fijos, Carnaval, Semana Santa y trasladables). Los días no laborables turísticos los decreta el Gobierno cada año: revisalos en **Super Admin → Feriados** y cargá los que falten (o tocá *Sincronizar con fuente online*).
-- [ ] Backups: el sistema guarda **una copia diaria de la base** en `data/backups` (rotación de 7) y avisa en Super Admin si pasaron más de 7 días sin backup. Igual llevate una copia **fuera del servidor** y respaldá `data/uploads` y `data/.secret`.
+- [ ] Backups: el sistema guarda **una copia diaria de la base** en `data/backups` (rotación de 7) y avisa en Super Admin si pasaron más de 7 días sin backup. Igual llevate una copia **fuera del servidor** y respaldá `data/uploads`. **El `SECRET` no se guarda junto a los backups a propósito**: copialo aparte (gestor de contraseñas); sin él, ni la base ni sus copias se pueden descifrar. Para el backup off-site configurá `BACKUP_UPLOAD_URL` / `BACKUP_UPLOAD_TOKEN` (sube solo el `.db`, por https).
 - [ ] Emails (**obligatorio en producción**): con `RESEND_API_KEY` se envían la confirmación de email y la recuperación de contraseña. Sin eso, los dueños nuevos no pueden pagar (tienen que confirmar su email) y nadie puede recuperar su clave. **En producción el contenido de los emails nunca se escribe en el log** (traería links con tokens). Solo en desarrollo (sin `https://` en `APP_URL`) los links salen por consola.
 - [ ] Configurá la ubicación de cada local (Panel → QR → "Usar mi ubicación actual" parado en el local).
 
@@ -101,7 +103,7 @@ test/                tests de integración
 - Una sola instancia (SQLite + límites de intentos en memoria). Alcanza para cientos de negocios; para escalar más, migrar a PostgreSQL.
 - Empleados extra: **pago único** por cupo (Checkout Pro). Los cupos no vencen y se suman al límite del plan; el precio por cupo se edita en Super Admin → Precios.
 - Vacaciones: cálculo LCT orientativo (por antigüedad). Convenios especiales requieren revisión.
-- **Rol "encargado de sucursal"** (D2): no se implementó a propósito. Exige permisos por sucursal en cada consulta y complicaría la autenticación; hoy el dueño ve y gestiona todas sus sucursales.
+- **Roles de gestión**: además del dueño hay **RRHH** (gestiona empleados y encargados de todo el negocio) y **encargado de sucursal** (ve y gestiona solo a los empleados de su sucursal: marcas manuales, documentos, permisos, datos de la sucursal). Ninguno puede tomar cuentas de su mismo nivel o superior; los pedidos de permisos siguen la cadena empleado → encargado/RRHH → dueño.
 - **PWA**: se puede instalar en el celular y abre la interfaz sin conexión, pero **marcar siempre necesita internet** (el servidor valida QR y ubicación).
 - **Fuente de feriados**: `api.argentinadatos.com` es un servicio de terceros. Solo se usa para completar la tabla local, nunca en cada marcación; si cae, siguen valiendo los feriados calculados por ley.
 - Los emails que envía el sistema (confirmar email, recuperar contraseña, aviso de feedback al Super Admin) necesitan `RESEND_API_KEY`.
@@ -109,9 +111,11 @@ test/                tests de integración
 ## 8. Seguridad en producción (lo que tenés que respetar)
 
 - **Super Admin**: `ADMIN_PASSWORD` de 12+ caracteres, única y que no sea de ejemplo; si no, la app **no arranca** en producción. Después de la primera vez borrala del `.env`. Si perdés el acceso: `ADMIN_PASSWORD='nueva-clave-larga' node scripts/reset-admin-password.js` (con Docker: `docker compose exec -e ADMIN_PASSWORD='...' asistok node scripts/reset-admin-password.js`).
-- **Proxy y puerto**: la app escucha solo en `127.0.0.1:3000` (docker-compose ya lo publica así) y se accede por nginx con HTTPS. `TRUST_PROXY=N` = cantidad de proxies de confianza (1 = nginx solo; 2 = Cloudflare + nginx). La IP real se toma de `X-Forwarded-For` contando desde la derecha; **nunca expongas el puerto de la app a internet** con `TRUST_PROXY` activo.
+- **Proxy y puerto**: por defecto la app escucha solo en `127.0.0.1` (variable `HOST`; el contenedor Docker usa `0.0.0.0` pero `docker-compose` lo publica únicamente en `127.0.0.1:3000`) y se accede por nginx con HTTPS. `TRUST_PROXY=N` = cantidad de proxies de confianza (1 = nginx solo; 2 = Cloudflare + nginx). La IP real se toma de `X-Forwarded-For` contando desde la derecha; **nunca expongas el puerto de la app a internet** con `TRUST_PROXY` activo.
+- **Errores no capturados**: se registran en el log (`[unhandledRejection]` / `[uncaughtException]`). Una excepción no capturada reinicia el proceso; usá `restart: unless-stopped` (compose) o `Restart=always` (systemd).
 - **Login**: solo cuentan los intentos fallidos, por email+IP (4 libres y espera de 1, 2, 4… hasta 15 min) y por IP (25). Nadie puede bloquear a otra persona desde otra IP. Quien comparte IP con un atacante (misma oficina) puede esperar unos minutos. No hay captcha (haría falta un servicio externo como Cloudflare Turnstile).
-- **Emails confirmados**: en producción el dueño tiene que confirmar su email para poder pagar, y un empleado que se anota por link no puede ser autorizado hasta confirmar el suyo. - **Archivos**: la base, `-wal`/`-shm`, `uploads/` y `backups/` quedan con permisos `600`/`700` (solo el usuario de la app). Con Docker y carpeta montada (`./data`), el dueño de los archivos es el usuario `node` del contenedor.
+- **Emails confirmados**: en producción el dueño tiene que confirmar su email para poder pagar, y un empleado que se anota por link no puede ser autorizado hasta confirmar el suyo. 
+- **Archivos**: la base, `-wal`/`-shm`, `uploads/` y `backups/` quedan con permisos `600`/`700` (solo el usuario de la app). Con Docker y carpeta montada (`./data`), el dueño de los archivos es el usuario `node` del contenedor.
 - **Suscripciones**: las cancelaciones se registran solo cuando Mercado Pago confirma la baja; cada cobro mensual se procesa una única vez aunque Mercado Pago repita la notificación.
 - **Textos legales**: plantilla completa incluida. Mientras queden placeholders (`[Razón Social]`, CUIT, etc.) se muestran como “texto provisional” y Super Admin muestra un aviso. Completalos y guardá en Inicio web.
 

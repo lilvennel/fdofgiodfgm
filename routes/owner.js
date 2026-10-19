@@ -222,13 +222,14 @@ route('POST', '/api/owner/employees', A, async (ctx) => {
   const packed = sec.packEmail(email);
   const sens = fc.encryptUserFields({
     phone: clean(b.phone, 40) || null, dni: clean(b.dni, 20) || null, personal_email: personalEmail || null, notes: clean(b.notes, 400) || null,
+    blood_type: clean(b.blood_type, 8) || null, obra_social: clean(b.obra_social, 80) || null,
   });
   const r = run(`INSERT INTO users(tenant_id,email,email_hash,name,pass_hash,role,status,must_change_pw,cargo,branch_id,phone,shift_start,hire_date,
                    dni,personal_email,blood_type,obra_social,notes,created_at)
                  VALUES(?,?,?,?,?,'employee','active',1,?,?,?,?,?,?,?,?,?,?,?)`,
     ctx.tenant.id, packed.email, packed.email_hash, name, await sec.hashPassword(tmp), clean(b.cargo, 60) || null, branch, sens.phone,
     b.shift_start || null, b.hire_date || new Date().toISOString().slice(0, 10),
-    sens.dni, sens.personal_email, clean(b.blood_type, 8) || null, clean(b.obra_social, 80) || null, sens.notes, Date.now());
+    sens.dni, sens.personal_email, sens.blood_type, sens.obra_social, sens.notes, Date.now());
   audit(ctx.user.id, ctx.tenant.id, 'employee.created', { id: Number(r.lastInsertRowid) });
   return { id: Number(r.lastInsertRowid), temp_password: tmp };
 });
@@ -254,6 +255,8 @@ route('PATCH', '/api/owner/employees/:id', A, (ctx) => {
     emg_phone: b.emg_phone !== undefined ? clean(b.emg_phone, 40) : e.emg_phone,
   };
   if (managerBranch(ctx) && v.branch_id !== managerBranch(ctx)) throw forbidden('Un encargado no puede mover empleados a otra sucursal');
+  // Nunca se guarda ni se re-guarda un valor que el cliente mande ya "cifrado": se conserva el que había.
+  for (const k of fc.SENSITIVE_USER) if (b[k] !== undefined && String(v[k] ?? '').startsWith('enc:')) v[k] = e[k];
   if (v.name.length < 2) throw bad('Nombre inválido');
   if (v.birthday && !isoDateOk(v.birthday)) throw bad('Fecha de cumpleaños inválida');
   if (v.hire_date && !isoDateOk(v.hire_date)) throw bad('Fecha de ingreso inválida');
@@ -261,12 +264,12 @@ route('PATCH', '/api/owner/employees/:id', A, (ctx) => {
   if (v.personal_email && !emailOk(String(v.personal_email).toLowerCase())) throw bad('El email personal no es válido');
   const sens = fc.encryptUserFields({
     phone: v.phone, address: v.address, dni: v.dni, personal_email: v.personal_email,
-    notes: v.notes, emg_name: v.emg_name, emg_phone: v.emg_phone,
+    notes: v.notes, emg_name: v.emg_name, emg_phone: v.emg_phone, blood_type: v.blood_type, obra_social: v.obra_social,
   });
   run(`UPDATE users SET name=?,cargo=?,branch_id=?,phone=?,address=?,birthday=?,hire_date=?,shift_start=?,
     dni=?,personal_email=?,blood_type=?,obra_social=?,notes=?,emg_name=?,emg_rel=?,emg_phone=? WHERE id=?`,
     v.name, v.cargo, v.branch_id, sens.phone, sens.address, v.birthday, v.hire_date, v.shift_start,
-    sens.dni, sens.personal_email, v.blood_type, v.obra_social, sens.notes, sens.emg_name, v.emg_rel, sens.emg_phone, e.id);
+    sens.dni, sens.personal_email, sens.blood_type, sens.obra_social, sens.notes, sens.emg_name, v.emg_rel, sens.emg_phone, e.id);
   return { ok: true };
 });
 
@@ -303,10 +306,17 @@ route('POST', '/api/owner/employees/:id/enable', A, (ctx) => {
   run("UPDATE users SET status='active' WHERE id=?", e.id);
   return { ok: true };
 });
+/** Borra del disco los archivos (certificados / recibos) de un usuario: al borrarlo, la base los elimina por cascada pero los archivos quedarían huérfanos. */
+function removeUserFiles(userId, tenantId) {
+  const base = path.join(cfg.DATA_DIR, 'uploads') + path.sep;
+  for (const r of all('SELECT path FROM docs WHERE user_id=? AND tenant_id=?', userId, tenantId)) {
+    try { const full = path.join(cfg.DATA_DIR, 'uploads', r.path || ''); if (r.path && full.startsWith(base)) fs.rmSync(full, { force: true }); } catch { /* ya no está */ }
+  }
+}
 route('POST', '/api/owner/employees/:id/delete', A_OWNER, (ctx) => {
   const e = getEmp(ctx, ctx.params.id);
   if (e.status === 'active') throw bad('Deshabilitalo antes de eliminarlo, o confirmá borrado forzado');
-  // soft-check: allow delete of disabled/rejected/pending
+  removeUserFiles(e.id, ctx.tenant.id);
   run('DELETE FROM sessions WHERE user_id=?', e.id);
   run("DELETE FROM users WHERE id=? AND tenant_id=? AND role IN ('employee','manager','hr')", e.id, ctx.tenant.id);
   audit(ctx.user.id, ctx.tenant.id, 'employee.deleted', { id: e.id, name: e.name });
@@ -314,6 +324,7 @@ route('POST', '/api/owner/employees/:id/delete', A_OWNER, (ctx) => {
 });
 route('POST', '/api/owner/employees/:id/delete-force', A_OWNER, (ctx) => {
   const e = getEmp(ctx, ctx.params.id);
+  removeUserFiles(e.id, ctx.tenant.id);
   run('DELETE FROM sessions WHERE user_id=?', e.id);
   run("DELETE FROM users WHERE id=? AND tenant_id=? AND role IN ('employee','manager','hr')", e.id, ctx.tenant.id);
   audit(ctx.user.id, ctx.tenant.id, 'employee.deleted', { id: e.id, name: e.name, force: true });
@@ -455,6 +466,8 @@ route('POST', '/api/owner/branches', A_OWNER, (ctx) => {
 route('PATCH', '/api/owner/branches/:id', A, (ctx) => {
   const cur = get('SELECT * FROM branches WHERE id=? AND tenant_id=?', Number(ctx.params.id), ctx.tenant.id);
   if (!cur) throw notFound();
+  const mb = managerBranch(ctx);
+  if (mb && cur.id !== mb) throw forbidden('Esa no es tu sucursal');
   const f = branchFields(ctx.body, cur);
   run('UPDATE branches SET name=?,address=?,lat=?,lng=?,radius=? WHERE id=?', f.name, f.address, f.lat, f.lng, f.radius, cur.id);
   return { ok: true };
@@ -591,19 +604,13 @@ route('PATCH', '/api/owner/emp-requests/:id', A, (ctx) => {
 });
 
 route('POST', '/api/owner/plan/upgrade', A_OWNER, (ctx) => {
-  // Sin cobro diferencial implementado, el cambio de plan NO puede ser gratis: solo en modo demo/desarrollo.
-  if (!cfg.ALLOW_DEMO_PAYMENTS) throw new HttpError(402, 'PAYMENT_REQUIRED', 'El cambio de plan se gestiona con soporte: escribinos y lo activamos.');
+  // El cambio de plan NUNCA es gratis: se aplica solo cuando se acredita el pago de la diferencia (POST /api/pay/checkout kind=plan_upgrade).
   const tier = String(ctx.body.plan_tier || '');
   if (!['esencial', 'pro', 'completo'].includes(tier)) throw bad('Plan inválido');
   const order = { esencial: 0, pro: 1, completo: 2 };
   const cur = ctx.tenant.plan_tier || 'esencial';
   if ((order[tier] || 0) <= (order[cur] || 0)) throw bad('Ya tenés ese plan o uno superior');
-  // Actualización inmediata de tier (el cobro diferencial puede hacerse luego vía checkout)
-  const mods = tier === 'completo' ? { mod_suc: 1, mod_rec: 1 } : {};
-  run('UPDATE tenants SET plan_tier=?, mod_suc=CASE WHEN ? THEN 1 ELSE mod_suc END, mod_rec=CASE WHEN ? THEN 1 ELSE mod_rec END WHERE id=?',
-    tier, tier === 'completo' ? 1 : 0, tier === 'completo' ? 1 : 0, ctx.tenant.id);
-  audit(ctx.user.id, ctx.tenant.id, 'plan.upgraded', { from: cur, to: tier });
-  return { ok: true, plan_tier: tier };
+  throw new HttpError(402, 'PAYMENT_REQUIRED', 'Para subir de plan se paga la diferencia. Te llevamos al pago.', { plan_tier: tier });
 });
 route('POST', '/api/owner/review', A, (ctx) => {
   const stars = intIn(ctx.body.stars, 1, 5, 'Estrellas');
@@ -612,7 +619,7 @@ route('POST', '/api/owner/review', A, (ctx) => {
   const name = clean(ctx.body.author_name, 60) || ctx.user.name || ctx.tenant.name;
   // one pending/approved per tenant - replace pending
   run('DELETE FROM reviews WHERE tenant_id=?', ctx.tenant.id);
-  run('INSERT INTO reviews(tenant_id,stars,text,author_name,approved,created_at) VALUES(?,?,?,?,1,?)',
+  run('INSERT INTO reviews(tenant_id,stars,text,author_name,approved,created_at) VALUES(?,?,?,?,0,?)', // 0 = pendiente: se publica recién cuando el Super Admin la aprueba
     ctx.tenant.id, stars, text, name, Date.now());
   return { ok: true };
 });
@@ -899,7 +906,7 @@ route('POST', '/api/owner/employees/:id/erase', A_OWNER, (ctx) => {
     run('DELETE FROM docs WHERE user_id=? AND tenant_id=?', e.id, tid);
     run('DELETE FROM notifs WHERE user_id=? AND tenant_id=?', e.id, tid);
     try { run('DELETE FROM emp_requests WHERE user_id=? AND tenant_id=?', e.id, tid); } catch { /* tabla opcional */ }
-    run('DELETE FROM users WHERE id=? AND tenant_id=? AND role=?', e.id, tid, 'employee');
+    run("DELETE FROM users WHERE id=? AND tenant_id=? AND role IN ('employee','manager','hr')", e.id, tid);
   });
   for (const rel of docPaths) {
     try {

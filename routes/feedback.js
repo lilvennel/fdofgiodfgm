@@ -60,6 +60,8 @@ route('GET', '/api/admin/feedback', SA, (ctx) => {
   const kd = ['problem', 'idea'].includes(ctx.query.kind) ? ctx.query.kind : null;
   const items = all(`SELECT f.*, t.name tenant, u.name author, u.email FROM feedback f LEFT JOIN tenants t ON t.id=f.tenant_id LEFT JOIN users u ON u.id=f.user_id
      WHERE (?1 IS NULL OR f.status=?1) AND (?2 IS NULL OR f.kind=?2) ORDER BY (f.status='new') DESC, f.id DESC LIMIT 300`, st, kd);
+  const fc = require('../lib/fieldcrypto');
+  for (const i of items) i.email = fc.decryptEmail(i.email) || i.email;
   return { items, new_count: get("SELECT COUNT(*) n FROM feedback WHERE status='new'").n };
 });
 route('PATCH', '/api/admin/feedback/:id', SA, (ctx) => {

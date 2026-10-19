@@ -1,5 +1,14 @@
 # Asist OK — cambios sobre AsistOK v3
 
+## v3.1.13 — Fusión de las ramas 3.1.11 (endurecimiento) y 3.1.12 (producto) + cierre pre-lanzamiento
+La 3.1.12 había perdido correcciones de seguridad de la 3.1.11 (eran ramas paralelas). Esta versión junta ambas:
+- **Recuperado de la 3.1.11:** grupo sanguíneo y obra social cifrados (con backfill idempotente de los datos viejos); reseñas pendientes hasta que el Super Admin las aprueba; el encargado solo edita SU sucursal; el cambio de plan **se paga** (diferencia, vía Mercado Pago; ya no hay upgrade gratis); `reset-admin-password` funciona con emails cifrados; webhook con validación de id e IPN (siempre confirma contra la API de MP); borrado de archivos huérfanos al eliminar un empleado; fechas "de hoy" en hora de Argentina; emails descifrados en Super Admin/feedback; MRR por plan; backup off-site solo por https; CSP con Turnstile, cabecera COOP, `keepAliveTimeout`; el service worker no cachea URLs con tokens; sin número de WhatsApp de ejemplo; `INFORME-AUDITORIA.md`, `docs/DESPLIEGUE.md`, `scripts/gen-env.js`, `test/hardening.test.js`.
+- **Se conserva de la 3.1.12:** prueba gratis de Mercado Pago (Esencial mensual), landing y página de estado nuevas, encargado/RRHH que marcan y piden permisos, cadena de autorización de permisos, exportar CSV, aviso "fuera de zona" cada 30 min, Railway (entrypoint y permisos del volumen).
+- **Backup:** ya no se copia el `SECRET` a `data/backups`; se borra `asistok.secret.bak` de versiones anteriores y se deja `SECRET-README.txt`.
+- **Errores globales:** `unhandledRejection` se registra sin tumbar el servidor; `uncaughtException` se registra y reinicia el proceso limpio.
+- **Red:** variable `HOST` (por defecto `127.0.0.1`; el contenedor Docker usa `0.0.0.0` y compose publica solo en local).
+- **Tests:** 34 (se agregaron `hardening.test.js` y `hardening-v3113.test.js`; el test de vacaciones ahora paga el upgrade en modo demo).
+
 ## v3.1.12 — Fix pago con Mercado Pago
 - **Fix:** `/api/pay/checkout` enviaba a Mercado Pago el email cifrado del usuario (`enc:…`) como `payer_email`, y MP respondía 400 "Invalid value for payer_email". Ahora se descifra antes de enviarlo.
 

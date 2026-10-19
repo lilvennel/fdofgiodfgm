@@ -17,8 +17,11 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain; charset=utf-8' };
 const SPA_PATHS = /^\/(alta\/[^/]+|m\/[^/]+|pantalla\/[^/]+|terminos|privacidad|estado)\/?$/;
 
+// Cloudflare Turnstile (captcha opcional) necesita cargar su script y su iframe: solo se habilita si está configurado.
+const TS = cfg.TURNSTILE_ENABLED ? ' https://challenges.cloudflare.com' : '';
 const SECURITY_HEADERS = {
-  'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+  'Content-Security-Policy': `default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'${TS}; connect-src 'self'${TS}; frame-src 'self' blob:${TS}; object-src blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`,
+  'Cross-Origin-Opener-Policy': 'same-origin',
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
@@ -121,11 +124,11 @@ async function handleApi(req, res, url) {
 function serveStatic(req, res, url) {
   let rel;
   try { rel = decodeURIComponent(url.pathname); } catch { return send(res, 400, 'URL inválida'); }
+  if (rel.includes('\0')) return send(res, 400, 'URL inválida');
   if (rel === '/' || SPA_PATHS.test(rel)) rel = '/index.html';
   const file = path.normalize(path.join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR + path.sep)) return send(res, 403, 'Prohibido');
   if (!fs.existsSync(file) || !fs.statSync(file).isFile()) {
-    if (path.extname(rel)) return send(res, 404, 'No encontrado');
     return send(res, 404, 'No encontrado');
   }
   const ext = path.extname(file).toLowerCase();
@@ -153,11 +156,20 @@ const server = http.createServer(async (req, res) => {
 });
 server.requestTimeout = 30_000;
 server.headersTimeout = 15_000;
+server.keepAliveTimeout = 65_000; // mayor que el de nginx/Railway (60 s) para evitar 502 intermitentes
 
 ensureAdmin().then(() => warnings.checkAdmin()).then(() => {
   warnings.printBoot();
   jobs.start();
-  server.listen(cfg.PORT, () => console.log(`AsistOK escuchando en ${cfg.APP_URL} (puerto ${cfg.PORT}, ${cfg.NODE_ENV})`));
+  server.listen(cfg.PORT, cfg.HOST, () => console.log(`AsistOK escuchando en ${cfg.APP_URL} (${cfg.HOST}:${cfg.PORT}, ${cfg.NODE_ENV})`));
 });
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { console.log('Cerrando…'); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 5000).unref(); });
+// Errores que nadie capturó: se registran siempre. Una promesa rechazada suelta no tumba el servidor;
+// una excepción no capturada deja el proceso en estado dudoso, así que se registra y se reinicia limpio (Docker/systemd lo levantan).
+process.on('unhandledRejection', (err) => console.error('[unhandledRejection]', err));
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+  setTimeout(() => process.exit(1), 200).unref();
+  try { server.close(() => process.exit(1)); } catch { process.exit(1); }
+});
 module.exports = { server };
