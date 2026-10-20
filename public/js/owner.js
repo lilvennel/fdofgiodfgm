@@ -710,10 +710,9 @@ async function tabSucursales() {
 const REP = { hours: 'Horas + extras', daily: 'Asistencia diaria', late: 'Tardanzas', auto: 'Salidas automáticas', contable: 'Export contable' };
 const repState = { type: 'hours', period: null };
 async function tabReportes() {
-  if (S.me.tenant.features && !S.me.tenant.features.reports) {
+  if (S.me.tenant.features && S.me.tenant.features.reports === false) {
     patchEl('#tab-body', html`<div class="card"><strong>📄 Reportes</strong>
-      <p class="muted mt">Los reportes avanzados están en el plan <strong>Pro</strong> o <strong>Completo</strong>.</p>
-      <p class="muted">Esencial incluye marcación, horas y avisos. Actualizá tu plan para exportar Excel y ver totales del equipo.</p>
+      <p class="muted mt">Los reportes no están disponibles en esta cuenta. Contactá a soporte.</p>
     </div>`);
     return;
   }
