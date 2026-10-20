@@ -23,14 +23,49 @@ route('GET', '/api/admin/stats', S, () => {
   const active = all("SELECT * FROM tenants WHERE status='active'");
   const mrr = active.filter((t) => t.plan === 'sub').reduce((a, t) => a + Math.round((p[(t.plan_tier || 'esencial') + '_m'] ?? p.sub) * (1 - (dom.tenantHasDiscount(t) ? t.discount_pct : 0) / 100)), 0);
   const d = new Date(); const monthStart = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+  const now = Date.now();
+  const trials_active = active.filter((t) => t.paid_until && t.paid_until > now && !t.mp_preapproval_id
+    && (now - (t.created_at || 0)) < 40 * 864e5).length;
+  const payments_failed = get("SELECT COUNT(*) n FROM payments WHERE status IN ('rejected','cancelled','refunded') AND created_at>=?", monthStart).n
+    || get("SELECT COUNT(*) n FROM payments WHERE status NOT IN ('approved','pending') AND created_at>=?", monthStart).n;
+  const payments_pending = get("SELECT COUNT(*) n FROM payments WHERE status='pending' AND created_at>=?", monthStart).n;
+  const deletion_requests = get("SELECT COUNT(*) n FROM tenants WHERE deletion_requested_at IS NOT NULL AND status!='suspended'").n
+    || get("SELECT COUNT(*) n FROM tenants WHERE deletion_requested_at IS NOT NULL").n;
+  // Disco aproximado bajo DATA_DIR
+  const sizeOf = (p) => {
+    try {
+      const st = fs.statSync(p);
+      if (st.isFile()) return st.size;
+      if (!st.isDirectory()) return 0;
+      let n = 0;
+      for (const e of fs.readdirSync(p, { withFileTypes: true })) n += sizeOf(path.join(p, e.name));
+      return n;
+    } catch { return 0; }
+  };
+  const dataDir = cfg.DATA_DIR;
+  const disk = {
+    backups: sizeOf(path.join(dataDir, 'backups')),
+    uploads: sizeOf(path.join(dataDir, 'uploads')),
+    db: sizeOf(path.join(dataDir, 'asistok.db')),
+  };
+  disk.total = disk.backups + disk.uploads + disk.db;
+  const marks_total = get('SELECT COUNT(*) n FROM marks').n;
   return {
     tenants_total: get('SELECT COUNT(*) n FROM tenants').n,
     tenants_active: active.length,
     past_due: get("SELECT COUNT(*) n FROM tenants WHERE status='past_due'").n,
+    pending_payment: get("SELECT COUNT(*) n FROM tenants WHERE status='pending_payment'").n,
+    suspended: get("SELECT COUNT(*) n FROM tenants WHERE status='suspended'").n,
     employees: get("SELECT COUNT(*) n FROM users WHERE role='employee' AND status='active'").n,
     mrr,
     collected_month: get("SELECT COALESCE(SUM(amount),0) n FROM payments WHERE status='approved' AND applied_at>=?", monthStart).n,
-    modules: active.reduce((a, t) => a + t.mod_suc + t.mod_rec, 0),
+    modules: active.reduce((a, t) => a + (t.mod_suc || 0) + (t.mod_rec || 0), 0),
+    trials_active,
+    payments_failed,
+    payments_pending,
+    deletion_requests,
+    marks_total,
+    disk,
     warnings: warnings.list(),
     backup_stale: backup.status().stale, backup_age_days: backup.status().age_days,
     feedback_new: get("SELECT COUNT(*) n FROM feedback WHERE status='new'").n,
@@ -39,11 +74,20 @@ route('GET', '/api/admin/stats', S, () => {
 
 route('GET', '/api/admin/tenants', S, (ctx) => {
   const st = ctx.query.status;
-  const rows = all(`SELECT t.id,t.slug,t.name,t.plan,t.status,t.created_at,t.paid_until,t.mp_preapproval_id,t.mod_suc,t.mod_rec,t.discount_pct,t.discount_months,t.coupon,
+  let rows;
+  if (st === 'deletion') {
+    rows = all(`SELECT t.id,t.slug,t.name,t.plan,t.status,t.created_at,t.paid_until,t.mp_preapproval_id,t.mod_suc,t.mod_rec,t.discount_pct,t.discount_months,t.coupon,t.deletion_requested_at,t.deletion_note,
       (SELECT email FROM users WHERE tenant_id=t.id AND role='owner' LIMIT 1) owner_email,
       (SELECT COUNT(*) FROM users WHERE tenant_id=t.id AND role='employee' AND status='active') employees
-    FROM tenants t ${['active', 'past_due', 'suspended', 'pending_payment'].includes(st) ? 'WHERE t.status=?' : 'WHERE ?=?'} ORDER BY t.id DESC LIMIT 500`,
-    ...(['active', 'past_due', 'suspended', 'pending_payment'].includes(st) ? [st] : [1, 1]));
+      FROM tenants t WHERE t.deletion_requested_at IS NOT NULL ORDER BY t.deletion_requested_at DESC LIMIT 500`);
+  } else {
+    const filtered = ['active', 'past_due', 'suspended', 'pending_payment'].includes(st);
+    rows = all(`SELECT t.id,t.slug,t.name,t.plan,t.status,t.created_at,t.paid_until,t.mp_preapproval_id,t.mod_suc,t.mod_rec,t.discount_pct,t.discount_months,t.coupon,t.deletion_requested_at,t.deletion_note,
+      (SELECT email FROM users WHERE tenant_id=t.id AND role='owner' LIMIT 1) owner_email,
+      (SELECT COUNT(*) FROM users WHERE tenant_id=t.id AND role='employee' AND status='active') employees
+      FROM tenants t ${filtered ? 'WHERE t.status=?' : ''} ORDER BY t.id DESC LIMIT 500`,
+      ...(filtered ? [st] : []));
+  }
   const now = Date.now();
   return {
     tenants: rows.map((r) => ({
@@ -53,6 +97,12 @@ route('GET', '/api/admin/tenants', S, (ctx) => {
         && r.paid_until > now && (now - (r.created_at || 0)) < 40 * 864e5,
     })),
   };
+});
+route('POST', '/api/admin/tenants/:id/deletion-clear', S, (ctx) => {
+  const t = getTenant(ctx.params.id);
+  run('UPDATE tenants SET deletion_requested_at=NULL, deletion_note=NULL WHERE id=?', t.id);
+  audit(ctx.user.id, t.id, 'admin.deletion_cleared');
+  return { ok: true };
 });
 const getTenant = (id) => { const t = get('SELECT * FROM tenants WHERE id=?', Number(id)); if (!t) throw notFound('Negocio no encontrado'); return t; };
 
@@ -448,6 +498,14 @@ route('POST', '/api/admin/backup/prune', S, (ctx) => {
   audit(ctx.user.id, null, 'admin.backup_prune', { keep, removed, bytes });
   return { ok: true, removed, bytes, keep };
 });
+route('PUT', '/api/admin/settings/help-video', S, (ctx) => {
+  let url = String((ctx.body && ctx.body.url) || '').trim().slice(0, 500);
+  if (url && !/^https:\/\//i.test(url)) throw bad('La URL debe ser https://');
+  setSetting('help_mark_video_url', url);
+  audit(ctx.user.id, null, 'admin.help_video', { set: !!url });
+  return { ok: true, url };
+});
+route('GET', '/api/admin/settings/help-video', S, () => ({ url: getSetting('help_mark_video_url', '') || '' }));
 route('GET', '/api/admin/disk', S, () => {
   const dataDir = cfg.DATA_DIR;
   const sizeOf = (p) => {

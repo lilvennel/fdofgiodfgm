@@ -761,16 +761,23 @@ function buildReport(ctx, type, period, branchId) {
       ];
     });
     return {
-      title: 'Export contable / liquidación',
-      columns: ['Empleado', 'Cargo', 'Período', 'Hs normales', 'Hs extra', 'Hs total', 'Hs esperadas', 'Diferencia', 'Tardanzas', 'Ausencias (sin marca)', 'Hs/día ref.', 'Días/sem ref.'],
+      title: 'Export contable / liquidación de sueldos',
+      columns: [
+        'Empleado', 'Cargo', 'Período (AAAA-MM)',
+        'Horas normales', 'Horas extra', 'Horas totales',
+        'Horas esperadas del mes', 'Diferencia (total - esperadas)',
+        'Cant. tardanzas', 'Días sin marca (aviso)',
+        'Horas/día referencia', 'Días/semana referencia',
+      ],
       rows,
       summary: {
         'Período': period,
-        'Empleados': rows.length,
-        'Total hs normales': H.round2(rows.reduce((a, r) => a + Number(r[3]), 0)),
-        'Total hs extra': H.round2(rows.reduce((a, r) => a + Number(r[4]), 0)),
+        'Empleados en el archivo': rows.length,
+        'Suma horas normales': H.round2(rows.reduce((a, r) => a + Number(r[3]), 0)) + ' h',
+        'Suma horas extra': H.round2(rows.reduce((a, r) => a + Number(r[4]), 0)) + ' h',
+        'Suma horas totales': H.round2(rows.reduce((a, r) => a + Number(r[5]), 0)) + ' h',
       },
-      note: 'Archivo orientado a liquidación. Las horas son las registradas en AsistOK; el empleador es responsable del cálculo final de sueldos.',
+      note: 'CSV listo para liquidación: una fila por empleado del período. Separador punto y coma (;). Las horas son las de AsistOK; el cálculo final de sueldos es responsabilidad del empleador / contador. No es un libro de sueldos ni reemplaza AFIP.',
     };
   }
   if (type === 'late') {
@@ -939,11 +946,52 @@ route('POST', '/api/owner/employees/:id/recibos', { auth: 'owner', limit: 8 * 10
   const period = clean(ctx.body.period, 7);
   if (!H.periodRange(period)) throw bad('Período inválido (AAAA-MM)');
   const up = decodeUpload(ctx.body.data, ctx.body.filename, { pdfOnly: true });
-  if (up.buf.length > cfg.MAX_UPLOAD_BYTES) throw new HttpError(413, 'TOO_LARGE', 'El PDF supera los 5 MB');
+  if (up.buf.length > cfg.MAX_UPLOAD_BYTES) throw new HttpError(413, 'TOO_LARGE', 'El PDF supera los 5 MB. Comprimilo o dividilo.');
+  const nEmp = get('SELECT COUNT(*) n FROM docs WHERE user_id=? AND tenant_id=?', e.id, ctx.tenant.id).n;
+  if (nEmp >= (cfg.MAX_DOCS_PER_EMPLOYEE || 40)) throw bad('Este empleado ya tiene el máximo de documentos (' + (cfg.MAX_DOCS_PER_EMPLOYEE || 40) + '). Borrá algunos antes de subir.');
+  const nTen = get('SELECT COUNT(*) n FROM docs WHERE tenant_id=?', ctx.tenant.id).n;
+  if (nTen >= (cfg.MAX_DOCS_PER_TENANT || 500)) throw bad('Llegaste al tope de documentos del negocio (' + (cfg.MAX_DOCS_PER_TENANT || 500) + ').');
   const rel = saveFile(ctx.tenant.id, up);
   const r = run(`INSERT INTO docs(tenant_id,user_id,kind,title,period,filename,mime,path,created_at,sign_status) VALUES(?,?,?,?,?,?,?,?,?,?)`,
     ctx.tenant.id, e.id, 'recibo', clean(ctx.body.title, 80) || `Recibo ${period}`, period, up.filename, up.mime, rel, Date.now(), 'pending');
   return { id: Number(r.lastInsertRowid) };
+});
+
+
+// ---------- Purga de marcas antiguas (libera espacio / orden) ----------
+route('POST', '/api/owner/marks/purge', A_OWNER, (ctx) => {
+  const months = intIn(ctx.body.months ?? cfg.MARKS_PURGE_MONTHS_DEFAULT ?? 18, cfg.MARKS_PURGE_MONTHS_MIN || 12, 60, 'Meses');
+  const confirm = String(ctx.body.confirm || '');
+  if (confirm !== 'BORRAR') throw bad('Para confirmar escribí BORRAR');
+  const cutoff = Date.now() - months * 30.44 * 864e5;
+  const n = get('SELECT COUNT(*) n FROM marks WHERE tenant_id=? AND ts<?', ctx.tenant.id, cutoff).n;
+  run('DELETE FROM marks WHERE tenant_id=? AND ts<?', ctx.tenant.id, cutoff);
+  audit(ctx.user.id, ctx.tenant.id, 'marks.purged', { months, deleted: n, cutoff });
+  return { ok: true, deleted: n, months, message: `Se borraron ${n} marcaciones anteriores a ~${months} meses.` };
+});
+route('GET', '/api/owner/marks/stats', A, (ctx) => {
+  const tid = ctx.tenant.id;
+  const total = get('SELECT COUNT(*) n FROM marks WHERE tenant_id=?', tid).n;
+  const oldest = get('SELECT MIN(ts) ts FROM marks WHERE tenant_id=?', tid);
+  const for18 = get('SELECT COUNT(*) n FROM marks WHERE tenant_id=? AND ts<?', tid, Date.now() - 18 * 30.44 * 864e5).n;
+  const for24 = get('SELECT COUNT(*) n FROM marks WHERE tenant_id=? AND ts<?', tid, Date.now() - 24 * 30.44 * 864e5).n;
+  return { total, oldest_ts: oldest?.ts || null, purgeable_18m: for18, purgeable_24m: for24 };
+});
+
+// ---------- Solicitud de baja de cuenta (aprueba Super Admin) ----------
+route('POST', '/api/owner/account/delete-request', A_OWNER, (ctx) => {
+  const note = clean(ctx.body.note || '', 400);
+  if (ctx.tenant.deletion_requested_at) {
+    return { ok: true, already: true, at: ctx.tenant.deletion_requested_at };
+  }
+  run('UPDATE tenants SET deletion_requested_at=?, deletion_note=? WHERE id=?', Date.now(), note || null, ctx.tenant.id);
+  audit(ctx.user.id, ctx.tenant.id, 'account.deletion_requested', { note: note || null });
+  return { ok: true, message: 'Solicitud enviada. AsistOK la revisará y eliminará la cuenta (o te contactará).' };
+});
+route('POST', '/api/owner/account/delete-request/cancel', A_OWNER, (ctx) => {
+  run('UPDATE tenants SET deletion_requested_at=NULL, deletion_note=NULL WHERE id=?', ctx.tenant.id);
+  audit(ctx.user.id, ctx.tenant.id, 'account.deletion_cancelled');
+  return { ok: true };
 });
 
 // ---------------- Onboarding (primera vez) ----------------
@@ -965,88 +1013,50 @@ function onboardingState(t) {
   const hasDisplay = !!get('SELECT 1 FROM display_links WHERE tenant_id=? AND revoked_at IS NULL LIMIT 1', t.id);
   const markOk = (t.mark_qr !== 0 || t.mark_gps !== 0);
   const themeCustom = (t.theme && t.theme !== '#0f766e');
+  // Checklist corto: solo lo imprescindible para marcar el primer día.
+  // Opcionales (logo, color, pantalla, reportes) se hacen después desde Config / Local.
   const steps = [
     {
-      key: 'business',
-      title: '1 · Nombre del negocio',
-      done: (t.name || '').length >= 2,
-      auto: true,
-      hint: 'Tu negocio ya figura como “' + (t.name || 'sin nombre') + '”. Si querés cambiarlo, escribí a soporte o pedí al Super Admin. El nombre aparece en el panel, reportes y recibos.',
-      go: 'inicio',
-    },
-    {
-      key: 'theme',
-      title: '2 · Color del panel',
-      done: themeCustom || manual.has('theme'),
-      auto: themeCustom,
-      hint: 'En Config → Color del panel elegí el color de tu marca (se aplica al instante). Queda guardado al tocar Guardar. Así el equipo reconoce tu negocio al entrar.',
-      go: 'config',
-    },
-    {
       key: 'location',
-      title: '3 · Ubicación del local (obligatorio)',
+      title: 'Ubicación del local',
       done: hasGeo || manual.has('location'),
       auto: hasGeo,
-      hint: 'Andá a la pestaña Local. Parate físicamente en el local y tocá “Usar mi ubicación actual”, o pegá el link de Google Maps (maps.app.goo.gl o maps.google.com). Configurá el radio (recomendado 50–80 m). Sin esto, el GPS no puede validar las marcaciones y el panel del empleado no deja marcar.',
+      hint: 'En Local, tocá “Usar mi ubicación” parado en el local o pegá el link de Google Maps. Radio recomendado: 50–80 m. Sin esto el GPS no valida.',
       go: 'qr',
     },
     {
       key: 'markmode',
-      title: '4 · Cómo van a marcar (QR y/o GPS)',
+      title: 'Cómo van a marcar',
       done: markOk || manual.has('markmode'),
       auto: markOk,
-      hint: 'En Config → Métodos de marcación activá uno o los dos: “GPS / geocerca” (marcan desde el celular dentro del radio, sin escanear) y/o “QR dinámico” (pantalla o tablet en el local). Tenés que dejar al menos uno activo. Si desactivás GPS, no se pide ubicación al empleado.',
+      hint: 'En Config activá GPS y/o QR. Al menos uno debe quedar activo. GPS = marcan desde el celular dentro del radio; QR = pantalla en el local.',
       go: 'config',
     },
     {
       key: 'hours',
-      title: '5 · Horarios, extras y tolerancia',
+      title: 'Horario y tolerancia',
       done: hasHours || manual.has('hours'),
       auto: hasHours,
-      hint: 'En Config configurá: (1) Horario del local / turno fijo y tolerancia de llegada tarde (minutos) para el aviso “Llegó tarde”; (2) Horas por día y días por semana (y sábados si aplica); (3) Cierre automático de jornada si olvidan marcar salida; (4) Permitir o no el botón Extra. Los feriados argentinos se calculan solos.',
+      hint: 'En Config: horas por día, días por semana y minutos de tolerancia de llegada. Opcional: cierre automático si olvidan marcar salida.',
       go: 'config',
     },
     {
       key: 'employees',
-      title: '6 · Cargar el equipo',
+      title: 'Cargar el equipo',
       done: emps > 0 || manual.has('employees'),
       auto: emps > 0,
       hint: pending
-        ? `Tenés ${pending} solicitud(es) pendiente(s) en Empleados: abrí cada una y autorizá o rechazá.`
-        : 'En Empleados podés: (1) “+ Agregar” uno por uno (anotá la contraseña temporal, se muestra una sola vez); (2) “Importar CSV” con la plantilla; (3) “QR de alta” o copiar el link para que se registren solos y queden pendientes hasta que los autorices. Asigná sucursal y cargo si corresponde.',
+        ? `Tenés ${pending} solicitud(es) pendiente(s) en Empleados: autorizá o rechazá.`
+        : 'En Empleados: agregá uno, importá CSV o compartí el link/QR de alta. Anotá la contraseña temporal (se muestra una sola vez).',
       go: 'empleados',
     },
     {
       key: 'mark',
-      title: '7 · Primera marcación de prueba',
+      title: 'Probar una marcación',
       done: marked || manual.has('mark'),
       auto: marked,
-      hint: 'Pedile a un empleado que: entre a la misma web → email + contraseña temporal → cambie la clave → acepte Términos y Privacidad → active el GPS del celular → toque “Entrada”. No hace falta escanear QR si el GPS está habilitado. En tu Inicio debería aparecer “En jornada”. Probá también marcar lejos del local: el sistema tiene que rechazar.',
+      hint: 'Un empleado entra con su clave → activa GPS → toca Entrada dentro del local. En tu Inicio debería verse “En jornada”. Mirá el video corto de abajo si hace falta.',
       go: 'empleados',
-    },
-    {
-      key: 'logo',
-      title: '8 · Logo (opcional)',
-      done: hasLogo || manual.has('logo'),
-      auto: hasLogo,
-      hint: 'En Config → Logo del negocio subí JPG, PNG o WebP (máx. 2 MB). Se ve en la barra del dueño y del empleado. Si tenés el módulo Recibos, también podés subir la firma del empleador para que aparezca en los recibos.',
-      go: 'config',
-    },
-    {
-      key: 'screen',
-      title: '9 · Pantalla / QR del local (opcional)',
-      done: hasDisplay || manual.has('screen'),
-      auto: hasDisplay,
-      hint: 'En Local podés crear una “pantalla fija” (TV/tablet en el local) o un “link para encargado” (un solo dispositivo, ideal por WhatsApp). El QR es dinámico y rota. Es opcional: el equipo puede marcar solo desde su panel con GPS. Si tenés Multi-sucursal, cada local tiene su propia geocerca y QR.',
-      go: 'qr',
-    },
-    {
-      key: 'reports',
-      title: '10 · Reportes y backup de datos',
-      done: manual.has('reports'),
-      auto: false,
-      hint: 'En Reportes exportá horas del mes en Excel/CSV o PDF. Con “Exportar todos los datos” bajás un JSON completo del negocio (empleados, marcas, permisos, docs) útil como backup o para responder a la AAIP. Desde la ficha de cada empleado también podés exportar o eliminar sus datos personales.',
-      go: 'reportes',
     },
   ];
   const completed = steps.filter((s) => s.done).length;
@@ -1064,7 +1074,7 @@ route('GET', '/api/owner/onboarding', A, (ctx) => onboardingState(ctx.tenant));
 route('POST', '/api/owner/onboarding', A_OWNER, (ctx) => {
   const { action, step } = ctx.body;
   if (!['dismiss', 'reopen', 'done', 'undo'].includes(action)) throw bad('Acción inválida');
-  if ((action === 'done' || action === 'undo') && !['theme', 'location', 'markmode', 'hours', 'employees', 'mark', 'logo', 'screen', 'reports'].includes(step)) throw bad('Paso inválido');
+  if ((action === 'done' || action === 'undo') && !['location', 'markmode', 'hours', 'employees', 'mark'].includes(step)) throw bad('Paso inválido');
   setOnboarding(ctx.tenant, (ob) => {
     if (action === 'dismiss') ob.dismissed = true;
     if (action === 'reopen') ob.dismissed = false;
