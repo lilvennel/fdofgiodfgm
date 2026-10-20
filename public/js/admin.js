@@ -1,6 +1,13 @@
 import { S, acts, forms, html, raw, $, get, post, patch, api, render, patchEl, toast, openModal, closeModal, money, fmtDateTime, fmtDay, badge, copyText, todayAR, fileToBase64, esc } from './util.js';
 
 const A = { tab: 'cuentas', filter: 'all' };
+const fmtDisk = (n) => {
+  n = Number(n) || 0;
+  if (n > 1073741824) return (n / 1073741824).toFixed(2) + ' GB';
+  if (n > 1048576) return (n / 1048576).toFixed(1) + ' MB';
+  if (n > 1024) return Math.round(n / 1024) + ' KB';
+  return n + ' B';
+};
 
 const ACTION_LABELS = {
   'tenant.created': 'Negocio creado',
@@ -78,9 +85,14 @@ export async function renderAdmin() {
     <div class="stat"><div class="stat-l">Negocios activos</div><div class="stat-v" style="color:var(--theme)">${s.tenants_active}<span class="muted"> / ${s.tenants_total}</span></div></div>
     <div class="stat"><div class="stat-l">MRR estimado</div><div class="stat-v">${money(s.mrr)}</div></div>
     <div class="stat"><div class="stat-l">Cobrado este mes</div><div class="stat-v">${money(s.collected_month)}</div></div>
-    <div class="stat"><div class="stat-l">Pagos vencidos</div><div class="stat-v">${s.past_due}</div></div>
-    <div class="stat"><div class="stat-l">Empleados</div><div class="stat-v">${s.employees}</div></div>
-    <div class="stat"><div class="stat-l">Módulos vendidos</div><div class="stat-v">${s.modules}</div></div></div>
+    <div class="stat"><div class="stat-l">Trials activos</div><div class="stat-v">${s.trials_active || 0}</div></div>
+    <div class="stat"><div class="stat-l">Pagos fallidos (mes)</div><div class="stat-v" style="${(s.payments_failed||0)>0?'color:#b91c1c':''}">${s.payments_failed || 0}</div></div>
+    <div class="stat"><div class="stat-l">Pago vencido</div><div class="stat-v">${s.past_due}</div></div>
+    <div class="stat"><div class="stat-l">Bajas pedidas</div><div class="stat-v">${s.deletion_requests || 0}</div></div>
+    <div class="stat"><div class="stat-l">Disco usado</div><div class="stat-v" style="font-size:1.05rem">${fmtDisk(s.disk && s.disk.total)}</div>
+      <div class="muted" style="font-size:.72rem;margin-top:2px">DB ${fmtDisk(s.disk&&s.disk.db)} · backups ${fmtDisk(s.disk&&s.disk.backups)} · uploads ${fmtDisk(s.disk&&s.disk.uploads)}</div></div>
+  </div>
+  ${(s.deletion_requests||0) > 0 ? html`<div class="alert alert-warn">🗑 Hay <strong>${s.deletion_requests}</strong> solicitud(es) de baja. <button class="link" type="button" data-act="a-filter" data-f="deletion">Ver cuentas</button></div>` : ''}
   <div class="sa-tabs">${TABS.map(([k, l]) => html`<button class="sa-tab ${A.tab === k ? 'active' : ''}" data-act="a-tab" data-tab="${k}" type="button">${l}${k === 'feedback' && s.feedback_new ? html` <span class="pending-badge">${s.feedback_new}</span>` : ''}</button>`)}</div>
   <div id="a-body">${loading}</div></main>`);
   load();
@@ -90,18 +102,25 @@ async function load() { try { await ({ cuentas, sitio, precios, cupones, factura
 
 async function cuentas() {
   const { tenants } = await get('/api/admin/tenants' + (A.filter === 'all' ? '' : '?status=' + A.filter));
-  patchEl('#a-body', html`<div class="sa-filter">${[['all', 'Todas'], ['active', 'Activas'], ['past_due', 'Pago vencido'], ['pending_payment', 'Sin pagar'], ['suspended', 'Suspendidas']].map(([k, l]) => html`<button class="${A.filter === k ? 'active' : ''}" data-act="a-filter" data-f="${k}" type="button">${l}</button>`)}</div>
+  patchEl('#a-body', html`<div class="sa-filter">${[['all', 'Todas'], ['active', 'Activas'], ['past_due', 'Pago vencido'], ['pending_payment', 'Sin pagar'], ['suspended', 'Suspendidas'], ['deletion', 'Baja pedida']].map(([k, l]) => html`<button class="${A.filter === k ? 'active' : ''}" data-act="a-filter" data-f="${k}" type="button">${l}</button>`)}</div>
   ${tenants.length ? tenants.map((t) => html`<div class="account-card"><div class="row" style="gap:10px;align-items:flex-start"><div class="brand-mark brand-mark-logo" style="flex-shrink:0" title="AsistOK"></div><div class="grow"><div style="font-weight:700">${t.name}</div>
     <div class="account-meta">/${t.slug} · ${t.owner_email} · ${t.plan === 'once' ? 'Pago único' : 'Suscripción'} · ${t.employees} emp.${t.mod_suc ? ' · Multi-sucursal' : ''}${t.mod_rec ? ' · Recibos' : ''}</div>
     <div class="account-meta">Alta ${fmtDateTime(t.created_at)}${t.paid_until ? ' · hasta ' + new Date(t.paid_until).toLocaleDateString('es-AR') : ''}${t.trial ? ' · 🎁 prueba' : ''}${t.discount_pct ? ` · ${t.discount_pct}% OFF (${t.discount_months} m)` : ''}</div>
-    <div style="margin-top:6px">${badge(t.status)}${t.trial ? html` <span class="pill" style="font-size:.7rem;background:#ffedd5;color:#9a3412">Prueba 30 días</span>` : ''}</div></div></div>
+    <div style="margin-top:6px">${badge(t.status)}${t.trial ? html` <span class="pill" style="font-size:.7rem;background:#ffedd5;color:#9a3412">Prueba 30 días</span>` : ''}${t.deletion_requested_at ? html` <span class="pill" style="font-size:.7rem;background:#fee2e2;color:#991b1b">Baja solicitada ${fmtDay(t.deletion_requested_at)}</span>` : ''}</div></div></div>
     <div class="account-actions">${t.status === 'suspended' || t.status === 'pending_payment' || t.status === 'past_due' ? html`<button class="btn btn-primary btn-sm" data-act="a-status" data-id="${t.id}" data-s="active" type="button">Activar</button>` : html`<button class="btn btn-outline btn-sm" data-act="a-status" data-id="${t.id}" data-s="suspended" type="button">Suspender</button>`}
+    ${t.deletion_requested_at ? html`<button class="btn btn-outline btn-sm" data-act="a-del-clear" data-id="${t.id}" type="button">Anular pedido de baja</button>` : ''}
     <button class="btn btn-danger btn-sm" data-act="a-del-tenant" data-id="${t.id}" data-name="${t.name}" type="button">Eliminar</button>
     <button class="btn btn-outline btn-sm" data-act="a-disc" data-id="${t.id}" data-name="${t.name}" type="button">Descuento</button>
     <button class="btn btn-outline btn-sm" data-act="a-pw" data-id="${t.id}" type="button">Reset clave</button>
     <a class="btn btn-outline btn-sm" href="/api/admin/tenants/${t.id}/export" title="Paquete JSON para AAIP / orden judicial">📥 Exportar datos</a></div></div>`) : html`<p class="muted">No hay cuentas en esta vista.</p>`}`);
 }
-acts['a-filter'] = (el) => { A.filter = el.dataset.f; load(); };
+acts['a-filter'] = (el) => { A.filter = el.dataset.f; A.tab = 'cuentas'; renderAdmin(); };
+acts['a-del-clear'] = async (el) => {
+  if (!confirm('¿Anular el pedido de baja de esta cuenta?')) return;
+  await post('/api/admin/tenants/' + el.dataset.id + '/deletion-clear');
+  toast('Pedido anulado');
+  renderAdmin();
+};
 acts['a-del-tenant'] = async (el) => {
   const name = el.dataset.name || '';
   const id = el.dataset.id;
@@ -445,7 +464,8 @@ forms.holiday = async (v) => { await post('/api/admin/holidays', v); toast('Feri
 acts['hol-del'] = async (el) => { await api('DELETE', '/api/admin/holidays/' + el.dataset.date); load(); };
 
 async function sistema() {
-  const [{ audit }, b] = await Promise.all([get('/api/admin/audit'), get('/api/admin/backup/status')]);
+  const [{ audit }, b, hv] = await Promise.all([get('/api/admin/audit'), get('/api/admin/backup/status'), get('/api/admin/settings/help-video').catch(() => ({ url: '' }))]);
+  const helpVideo = (hv && hv.url) || '';
   const stats = await get('/api/admin/stats');
   const kb = (n) => (n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
   patchEl('#a-body', html`${stats.warnings.length ? html`<div class="card"><strong>Avisos de configuración</strong>${stats.warnings.map((w) => html`<div class="alert ${w.level === 'critical' ? 'alert-err' : 'alert-warn'} mt">${w.text}</div>`)}</div>` : html`<div class="alert alert-ok">✅ Configuración sin avisos.</div>`}
@@ -458,6 +478,11 @@ async function sistema() {
     <form data-form="bk-settings" class="mt"><div class="grid2"><div class="form-group"><label for="bk-keep">Copias que se guardan</label><input id="bk-keep" name="keep" type="number" min="1" max="60" value="${b.keep}"></div><div class="form-group"><label for="bk-warn">Avisar si pasaron más de (días)</label><input id="bk-warn" name="warn_days" type="number" min="1" max="90" value="${b.warn_days}"></div></div>
       <label class="row mb" style="font-size:.85rem"><input type="checkbox" name="auto" ${b.auto ? raw('checked') : ''}> Hacer una copia automática por día</label><button class="btn btn-outline btn-sm" type="submit">Guardar ajustes</button></form>
     <p class="muted mt">Las copias automáticas guardan la <strong>base de datos</strong>. Los archivos subidos (recibos y certificados en <code>data/uploads</code>) y el archivo <code>data/.secret</code> hay que respaldarlos aparte, y conviene llevar una copia fuera del servidor.</p></div>
+  <div class="card"><strong>▶️ Video “Cómo marcar”</strong>
+    <p class="muted mb">Aparece en el checklist del dueño. YouTube o archivo .mp4 por https (ideal ~1 minuto).</p>
+    <form data-form="help-video"><div class="form-group"><label for="hv-url">URL</label>
+      <input id="hv-url" name="url" type="url" placeholder="https://www.youtube.com/watch?v=..." value="${helpVideo}"></div>
+      <button class="btn btn-primary btn-sm" type="submit">Guardar URL</button></form></div>
   <div class="card"><strong>📋 Auditoría</strong><p class="muted mb">Últimos ${audit.length} eventos del sistema</p>
     <div class="row mb" style="flex-wrap:wrap;gap:8px">
       <select id="audit-cat" data-change="audit-filter" style="max-width:160px">
@@ -492,6 +517,12 @@ acts['bk-prune'] = async () => {
   renderAdmin();
 };
 forms['bk-settings'] = async (v) => { await api('PUT', '/api/admin/backup/settings', { auto: v.auto === 'on', keep: +v.keep, warn_days: +v.warn_days }); toast('Ajustes guardados'); renderAdmin(); };
+forms['help-video'] = async (v) => {
+  await api('PUT', '/api/admin/settings/help-video', { url: v.url || '' });
+  toast('URL del video guardada');
+  renderAdmin();
+};
+
 
 // ---------- Novedades (changelog) ----------
 const entryForm = (e = {}) => html`<form data-form="news-save" data-id="${e.id || ''}"><div class="grid2"><div class="form-group"><label for="nv-v">Versión</label><input id="nv-v" name="version" value="${e.version || ''}" required maxlength="20" placeholder="3.2.0"></div><div class="form-group"><label for="nv-d">Fecha</label><input id="nv-d" name="date" type="date" value="${e.date || todayAR()}" required></div></div>

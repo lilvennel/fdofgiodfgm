@@ -90,16 +90,38 @@ const setBadge = (n) => { const b = $('#notif-count'); if (b) { b.textContent = 
 // ---------- Primeros pasos (onboarding) ----------
 const obCard = (ob) => {
   if (!ob || ob.dismissed) return '';
-  if (ob.all_done) return html`<div class="card ob-card"><div class="row between"><div><strong>🎉 ¡Todo listo!</strong><div class="muted">Completaste la configuración inicial de AsistOK. Tu equipo ya puede marcar asistencia. Si necesitás el checklist de nuevo, está en Config.</div></div><button class="btn btn-outline btn-sm" data-act="ob-dismiss" type="button">Cerrar</button></div></div>`;
+  if (ob.all_done) return html`<div class="card ob-card"><div class="row between"><div><strong>🎉 ¡Listo para marcar!</strong><div class="muted">Tu equipo ya puede registrar asistencia. El checklist queda en Config si lo necesitás de nuevo.</div></div><button class="btn btn-outline btn-sm" data-act="ob-dismiss" type="button">Cerrar</button></div></div>`;
   const nextIdx = ob.steps.findIndex((s) => !s.done);
-  return html`<div class="card ob-card"><div class="row between"><div><strong>🧭 Configurá AsistOK</strong><div class="muted">${ob.completed} de ${ob.total} pasos · guía según tu negocio</div></div><button class="btn btn-outline btn-sm" data-act="ob-dismiss" type="button">Omitir por ahora</button></div>
-    <div class="ob-bar"><i style="width:${(ob.completed / ob.total) * 100}%"></i></div>
+  const tabLabel = (go) => go === 'qr' ? 'Local' : go === 'config' ? 'Config' : go === 'empleados' ? 'Empleados' : 'Inicio';
+  // Video: podés poner un YouTube/Loom en Super Admin → Ajustes (clave help_mark_video_url) o dejar el guía texto.
+  const videoUrl = (S.me && S.me.help_mark_video_url) || (S.site && S.site.help_mark_video_url) || '';
+  const yt = videoUrl && /(?:youtu\.be\/|v=)([\w-]{6,})/.exec(videoUrl);
+  const embed = yt ? `https://www.youtube.com/embed/${yt[1]}?rel=0` : (videoUrl && /\.mp4($|\?)/i.test(videoUrl) ? videoUrl : '');
+  return html`<div class="card ob-card">
+    <div class="row between"><div><strong>🧭 Primeros pasos</strong><div class="muted">${ob.completed} de ${ob.total} · solo lo necesario para marcar hoy</div></div>
+      <button class="btn btn-outline btn-sm" data-act="ob-dismiss" type="button">Omitir</button></div>
+    <div class="ob-bar"><i style="width:${(ob.completed / Math.max(1, ob.total)) * 100}%"></i></div>
     ${ob.steps.map((st, i) => {
       const isNext = i === nextIdx;
       const showDetail = !st.done && (isNext || i <= nextIdx + 1);
       return html`<div class="ob-step ${st.done ? 'done' : ''} ${isNext ? 'ob-next' : ''}"><div class="ob-dot">${st.done ? '✓' : i + 1}</div><div class="grow"><div class="t">${st.title}</div>
-        ${st.done ? html`<div class="h" style="opacity:.7">Listo</div>` : showDetail ? html`<div class="h">${st.hint}</div><div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn btn-primary btn-sm" data-act="ob-go" data-tab="${st.go}" type="button">Ir a ${st.go === 'qr' ? 'Local' : st.go === 'config' ? 'Config' : st.go === 'empleados' ? 'Empleados' : st.go === 'reportes' ? 'Reportes' : 'Inicio'}</button>${st.key !== 'business' ? html`<button class="btn btn-outline btn-sm" data-act="ob-done" data-step="${st.key}" type="button">Ya lo hice</button>` : ''}</div>` : html`<div class="h muted">Siguiente después del paso actual</div>`}</div></div>`;
-    })}</div>`;
+        ${st.done ? html`<div class="h" style="opacity:.7">Listo</div>` : showDetail ? html`<div class="h">${st.hint}</div><div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn btn-primary btn-sm" data-act="ob-go" data-tab="${st.go}" type="button">Ir a ${tabLabel(st.go)}</button><button class="btn btn-outline btn-sm" data-act="ob-done" data-step="${st.key}" type="button">Ya lo hice</button></div>` : html`<div class="h muted">Siguiente después del paso actual</div>`}</div></div>`;
+    })}
+    <div class="ob-help mt">
+      <strong style="font-size:.9rem">▶️ Cómo marcar (1 min)</strong>
+      <p class="muted" style="font-size:.82rem;margin:6px 0 8px">Para el empleado, en el celular:</p>
+      <ol class="ob-howto">
+        <li>Abrir el link de AsistOK e iniciar sesión</li>
+        <li>Activar <strong>ubicación / GPS</strong> del teléfono</li>
+        <li>Estar <strong>dentro del local</strong> (radio configurado)</li>
+        <li>Tocar <strong>Entrada</strong> (o escanear el QR si usás pantalla)</li>
+        <li>Al irse, tocar <strong>Salida</strong></li>
+      </ol>
+      ${embed && yt ? html`<div class="ob-video"><iframe src="${embed}" title="Cómo marcar en AsistOK" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe></div>` : ''}
+      ${embed && !yt ? html`<div class="ob-video"><video src="${embed}" controls playsinline preload="metadata"></video></div>` : ''}
+      ${!embed ? html`<p class="muted" style="font-size:.78rem;margin-top:8px">Cuando subas el video de 1 min, poné la URL en Super Admin (ajustes <code>help_mark_video_url</code>) y aparece acá.</p>` : ''}
+    </div>
+  </div>`;
 };
 const obAct = (body) => async () => { O.ob = await post('/api/owner/onboarding', body); renderOwner(); };
 acts['ob-dismiss'] = obAct({ action: 'dismiss' });
@@ -707,7 +729,7 @@ async function tabSucursales() {
 }
 
 // ---------- Reportes ----------
-const REP = { hours: 'Horas + extras', daily: 'Asistencia diaria', late: 'Tardanzas', auto: 'Salidas automáticas', contable: 'Export contable' };
+const REP = { hours: 'Horas + extras', daily: 'Asistencia diaria', late: 'Tardanzas', auto: 'Salidas automáticas', contable: 'Contable / sueldos (CSV)' };
 const repState = { type: 'hours', period: null };
 async function tabReportes() {
   if (S.me.tenant.features && S.me.tenant.features.reports === false) {
@@ -859,6 +881,20 @@ async function tabConfig() {
     ${t.extra_slots ? html`<p class="muted">Tenés ${t.extra_slots} cupos extra comprados (pago único, sin vencimiento).</p>` : ''}
     ${payments.length ? html`<div class="tbl-wrap mt"><table class="tbl"><thead><tr><th>Fecha</th><th>Concepto</th><th>Monto</th><th>Estado</th></tr></thead><tbody>${payments.map((x) => html`<tr><td>${fmtDateTime(x.created_at)}</td><td>${{ plan: 'Plan', extra: 'Extras ×' + x.qty, mod_suc: 'Multi-sucursal', mod_rec: 'Recibos' }[x.kind]}</td><td>${money(x.amount)}</td><td>${badge(x.status)}</td></tr>`)}</tbody></table></div>` : ''}
     <div class="row mt">${t.plan === 'sub' && !t.cancel_at ? html`<button class="btn btn-danger btn-sm" data-act="plan-cancel" type="button">Cancelar suscripción</button>` : ''}<button class="btn btn-outline btn-sm" data-act="change-pw" type="button">Cambiar mi contraseña</button></div></div>
+
+  <div class="card mt"><strong>🗑 Datos y espacio</strong>
+    <p class="muted mb">Podés borrar marcaciones muy antiguas para liberar espacio. Recomendado: conservar al menos 18 meses por posibles reclamos laborales.</p>
+    <div class="row" style="flex-wrap:wrap;gap:8px">
+      <button class="btn btn-outline btn-sm" data-act="marks-purge" data-m="18" type="button">Purgar &gt; 18 meses</button>
+      <button class="btn btn-outline btn-sm" data-act="marks-purge" data-m="24" type="button">Purgar &gt; 24 meses</button>
+    </div>
+  </div>
+
+  <div class="card mt"><strong>Cerrar cuenta en AsistOK</strong>
+    ${t.deletion_requested_at ? html`<div class="alert alert-warn mt">Ya pediste la baja el ${fmtDay(t.deletion_requested_at)}. El equipo de AsistOK la revisará. <button class="link" type="button" data-act="account-delete-cancel">Cancelar pedido</button></div>` : html`
+    <p class="muted mb">Se envía un pedido al administrador. No borra nada al instante. Después de la baja se eliminan empleados, marcas y archivos del negocio.</p>
+    <button class="btn btn-danger btn-sm" data-act="account-delete-req" type="button">Solicitar baja de la cuenta</button>`}
+  </div>
   ${O.ob && (O.ob.dismissed || O.ob.all_done) ? html`<div class="card"><div class="row between"><div><strong>🧭 Primeros pasos</strong><div class="muted">${O.ob.completed} de ${O.ob.total} completados</div></div><button class="btn btn-outline btn-sm" data-act="ob-reopen" type="button">Ver checklist</button></div></div>` : ''}
   ${newsBlock(news)}
   <div class="card"><strong>⭐ Valorá AsistOK</strong>
@@ -1193,4 +1229,25 @@ acts['inv-req'] = async (el) => {
   await post('/api/owner/invoices/request', { payment_id: +el.dataset.pay });
   toast('Solicitud enviada');
   renderOwner();
+};
+
+acts['marks-purge'] = async (el) => {
+  const m = el.dataset.m || '18';
+  if (!confirm('¿Borrar marcaciones de hace más de ' + m + ' meses? No se puede deshacer.')) return;
+  const typed = prompt('Escribí BORRAR para confirmar');
+  if (typed !== 'BORRAR') return toast('Cancelado');
+  const r = await post('/api/owner/marks/purge', { months: +m, confirm: 'BORRAR' });
+  toast(r.message || ('Borradas: ' + r.deleted));
+};
+acts['account-delete-req'] = async () => {
+  if (!confirm('¿Solicitar la baja de toda la cuenta? AsistOK revisará el pedido antes de borrar.')) return;
+  const note = prompt('Motivo (opcional)') || '';
+  const r = await post('/api/owner/account/delete-request', { note });
+  toast(r.message || 'Pedido enviado');
+  loadTab();
+};
+acts['account-delete-cancel'] = async () => {
+  await post('/api/owner/account/delete-request/cancel');
+  toast('Pedido cancelado');
+  loadTab();
 };
