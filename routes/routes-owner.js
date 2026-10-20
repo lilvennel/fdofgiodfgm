@@ -981,15 +981,25 @@ route('GET', '/api/owner/marks/stats', A, (ctx) => {
 // ---------- Solicitud de baja de cuenta (aprueba Super Admin) ----------
 route('POST', '/api/owner/account/delete-request', A_OWNER, (ctx) => {
   const note = clean(ctx.body.note || '', 400);
-  if (ctx.tenant.deletion_requested_at) {
-    return { ok: true, already: true, at: ctx.tenant.deletion_requested_at };
+  try {
+    if (ctx.tenant.deletion_requested_at) {
+      return { ok: true, already: true, at: ctx.tenant.deletion_requested_at };
+    }
+    run('UPDATE tenants SET deletion_requested_at=?, deletion_note=? WHERE id=?', Date.now(), note || null, ctx.tenant.id);
+  } catch (e) {
+    console.error('[delete-request]', e.message);
+    throw bad('No se pudo registrar la baja. Reiniciá el servidor (migración pendiente) o contactá soporte.');
   }
-  run('UPDATE tenants SET deletion_requested_at=?, deletion_note=? WHERE id=?', Date.now(), note || null, ctx.tenant.id);
   audit(ctx.user.id, ctx.tenant.id, 'account.deletion_requested', { note: note || null });
   return { ok: true, message: 'Solicitud enviada. AsistOK la revisará y eliminará la cuenta (o te contactará).' };
 });
 route('POST', '/api/owner/account/delete-request/cancel', A_OWNER, (ctx) => {
-  run('UPDATE tenants SET deletion_requested_at=NULL, deletion_note=NULL WHERE id=?', ctx.tenant.id);
+  try {
+    run('UPDATE tenants SET deletion_requested_at=NULL, deletion_note=NULL WHERE id=?', ctx.tenant.id);
+  } catch (e) {
+    console.error('[delete-cancel]', e.message);
+    throw bad('No se pudo cancelar el pedido.');
+  }
   audit(ctx.user.id, ctx.tenant.id, 'account.deletion_cancelled');
   return { ok: true };
 });

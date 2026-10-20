@@ -466,21 +466,23 @@ route('PUT', '/api/admin/backup/settings', S, (ctx) => {
   return { ok: true };
 });
 route('GET', '/api/admin/backup/file/:name', S, (ctx) => {
-  if (!/^asistok-[\d-]+\.db$/.test(ctx.params.name)) throw bad('Nombre inválido');
+  if (!/^asistok-[\w.-]+\.db$/i.test(ctx.params.name) || String(ctx.params.name).includes('..')) throw bad('Nombre inválido');
   const f = path.join(cfg.DATA_DIR, 'backups', ctx.params.name);
   if (!fs.existsSync(f)) throw notFound('Esa copia ya no existe');
   backup.noteDownload();
   return { __file: { buf: fs.readFileSync(f), filename: ctx.params.name, mime: 'application/octet-stream' } };
 });
-route('DELETE', '/api/admin/backup/file/:name', S, (ctx) => {
-  const name = String(ctx.params.name || '');
-  if (!/^asistok-.*\.db$/i.test(name) || name.includes('..') || name.includes('/')) throw bad('Nombre inválido');
+function deleteBackupFile(name, userId) {
+  name = String(name || '');
+  if (!/^asistok-.*\.db$/i.test(name) || name.includes('..') || name.includes('/') || name.includes('\\')) throw bad('Nombre inválido');
   const f = path.join(cfg.DATA_DIR, 'backups', name);
   if (!fs.existsSync(f)) throw notFound('Backup no encontrado');
   fs.rmSync(f, { force: true });
-  audit(ctx.user.id, null, 'admin.backup_delete', { file: name });
-  return { ok: true };
-});
+  audit(userId, null, 'admin.backup_delete', { file: name });
+  return { ok: true, file: name };
+}
+route('DELETE', '/api/admin/backup/file/:name', S, (ctx) => deleteBackupFile(ctx.params.name, ctx.user.id));
+route('POST', '/api/admin/backup/delete', S, (ctx) => deleteBackupFile((ctx.body && ctx.body.file) || '', ctx.user.id));
 route('POST', '/api/admin/backup/prune', S, (ctx) => {
   const keep = ctx.body.keep != null ? intIn(ctx.body.keep, 1, 60, 'Cantidad') : getSetting('backup_keep', 7);
   const list = backup.status().files || [];
@@ -497,37 +499,6 @@ route('POST', '/api/admin/backup/prune', S, (ctx) => {
   }
   audit(ctx.user.id, null, 'admin.backup_prune', { keep, removed, bytes });
   return { ok: true, removed, bytes, keep };
-});
-route('PUT', '/api/admin/settings/help-video', S, (ctx) => {
-  let url = String((ctx.body && ctx.body.url) || '').trim().slice(0, 500);
-  if (url && !/^https:\/\//i.test(url)) throw bad('La URL debe ser https://');
-  setSetting('help_mark_video_url', url);
-  audit(ctx.user.id, null, 'admin.help_video', { set: !!url });
-  return { ok: true, url };
-});
-route('GET', '/api/admin/settings/help-video', S, () => ({ url: getSetting('help_mark_video_url', '') || '' }));
-route('GET', '/api/admin/disk', S, () => {
-  const dataDir = cfg.DATA_DIR;
-  const sizeOf = (p) => {
-    try {
-      const st = fs.statSync(p);
-      if (st.isFile()) return st.size;
-      if (!st.isDirectory()) return 0;
-      let n = 0;
-      for (const e of fs.readdirSync(p, { withFileTypes: true })) {
-        n += sizeOf(path.join(p, e.name));
-      }
-      return n;
-    } catch { return 0; }
-  };
-  const backups = sizeOf(path.join(dataDir, 'backups'));
-  const uploads = sizeOf(path.join(dataDir, 'uploads'));
-  const db = sizeOf(path.join(dataDir, 'asistok.db'));
-  return {
-    data_dir: dataDir,
-    bytes: { backups, uploads, db, total: backups + uploads + db },
-    files: { backups: (backup.status().files || []).length },
-  };
 });
 
 route('GET', '/api/admin/audit', S, () => ({ audit: all('SELECT a.*, t.name tenant FROM audit a LEFT JOIN tenants t ON t.id=a.tenant_id ORDER BY a.id DESC LIMIT 200') }));
