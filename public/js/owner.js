@@ -93,10 +93,6 @@ const obCard = (ob) => {
   if (ob.all_done) return html`<div class="card ob-card"><div class="row between"><div><strong>🎉 ¡Listo para marcar!</strong><div class="muted">Tu equipo ya puede registrar asistencia. El checklist queda en Config si lo necesitás de nuevo.</div></div><button class="btn btn-outline btn-sm" data-act="ob-dismiss" type="button">Cerrar</button></div></div>`;
   const nextIdx = ob.steps.findIndex((s) => !s.done);
   const tabLabel = (go) => go === 'qr' ? 'Local' : go === 'config' ? 'Config' : go === 'empleados' ? 'Empleados' : 'Inicio';
-  // Video: podés poner un YouTube/Loom en Super Admin → Ajustes (clave help_mark_video_url) o dejar el guía texto.
-  const videoUrl = (S.me && S.me.help_mark_video_url) || (S.site && S.site.help_mark_video_url) || '';
-  const yt = videoUrl && /(?:youtu\.be\/|v=)([\w-]{6,})/.exec(videoUrl);
-  const embed = yt ? `https://www.youtube.com/embed/${yt[1]}?rel=0` : (videoUrl && /\.mp4($|\?)/i.test(videoUrl) ? videoUrl : '');
   return html`<div class="card ob-card">
     <div class="row between"><div><strong>🧭 Primeros pasos</strong><div class="muted">${ob.completed} de ${ob.total} · solo lo necesario para marcar hoy</div></div>
       <button class="btn btn-outline btn-sm" data-act="ob-dismiss" type="button">Omitir</button></div>
@@ -107,20 +103,6 @@ const obCard = (ob) => {
       return html`<div class="ob-step ${st.done ? 'done' : ''} ${isNext ? 'ob-next' : ''}"><div class="ob-dot">${st.done ? '✓' : i + 1}</div><div class="grow"><div class="t">${st.title}</div>
         ${st.done ? html`<div class="h" style="opacity:.7">Listo</div>` : showDetail ? html`<div class="h">${st.hint}</div><div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn btn-primary btn-sm" data-act="ob-go" data-tab="${st.go}" type="button">Ir a ${tabLabel(st.go)}</button><button class="btn btn-outline btn-sm" data-act="ob-done" data-step="${st.key}" type="button">Ya lo hice</button></div>` : html`<div class="h muted">Siguiente después del paso actual</div>`}</div></div>`;
     })}
-    <div class="ob-help mt">
-      <strong style="font-size:.9rem">▶️ Cómo marcar (1 min)</strong>
-      <p class="muted" style="font-size:.82rem;margin:6px 0 8px">Para el empleado, en el celular:</p>
-      <ol class="ob-howto">
-        <li>Abrir el link de AsistOK e iniciar sesión</li>
-        <li>Activar <strong>ubicación / GPS</strong> del teléfono</li>
-        <li>Estar <strong>dentro del local</strong> (radio configurado)</li>
-        <li>Tocar <strong>Entrada</strong> (o escanear el QR si usás pantalla)</li>
-        <li>Al irse, tocar <strong>Salida</strong></li>
-      </ol>
-      ${embed && yt ? html`<div class="ob-video"><iframe src="${embed}" title="Cómo marcar en AsistOK" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe></div>` : ''}
-      ${embed && !yt ? html`<div class="ob-video"><video src="${embed}" controls playsinline preload="metadata"></video></div>` : ''}
-      ${!embed ? html`<p class="muted" style="font-size:.78rem;margin-top:8px">Cuando subas el video de 1 min, poné la URL en Super Admin (ajustes <code>help_mark_video_url</code>) y aparece acá.</p>` : ''}
-    </div>
   </div>`;
 };
 const obAct = (body) => async () => { O.ob = await post('/api/owner/onboarding', body); renderOwner(); };

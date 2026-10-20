@@ -464,8 +464,7 @@ forms.holiday = async (v) => { await post('/api/admin/holidays', v); toast('Feri
 acts['hol-del'] = async (el) => { await api('DELETE', '/api/admin/holidays/' + el.dataset.date); load(); };
 
 async function sistema() {
-  const [{ audit }, b, hv] = await Promise.all([get('/api/admin/audit'), get('/api/admin/backup/status'), get('/api/admin/settings/help-video').catch(() => ({ url: '' }))]);
-  const helpVideo = (hv && hv.url) || '';
+  const [{ audit }, b] = await Promise.all([get('/api/admin/audit'), get('/api/admin/backup/status')]);
   const stats = await get('/api/admin/stats');
   const kb = (n) => (n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
   patchEl('#a-body', html`${stats.warnings.length ? html`<div class="card"><strong>Avisos de configuración</strong>${stats.warnings.map((w) => html`<div class="alert ${w.level === 'critical' ? 'alert-err' : 'alert-warn'} mt">${w.text}</div>`)}</div>` : html`<div class="alert alert-ok">✅ Configuración sin avisos.</div>`}
@@ -478,11 +477,6 @@ async function sistema() {
     <form data-form="bk-settings" class="mt"><div class="grid2"><div class="form-group"><label for="bk-keep">Copias que se guardan</label><input id="bk-keep" name="keep" type="number" min="1" max="60" value="${b.keep}"></div><div class="form-group"><label for="bk-warn">Avisar si pasaron más de (días)</label><input id="bk-warn" name="warn_days" type="number" min="1" max="90" value="${b.warn_days}"></div></div>
       <label class="row mb" style="font-size:.85rem"><input type="checkbox" name="auto" ${b.auto ? raw('checked') : ''}> Hacer una copia automática por día</label><button class="btn btn-outline btn-sm" type="submit">Guardar ajustes</button></form>
     <p class="muted mt">Las copias automáticas guardan la <strong>base de datos</strong>. Los archivos subidos (recibos y certificados en <code>data/uploads</code>) y el archivo <code>data/.secret</code> hay que respaldarlos aparte, y conviene llevar una copia fuera del servidor.</p></div>
-  <div class="card"><strong>▶️ Video “Cómo marcar”</strong>
-    <p class="muted mb">Aparece en el checklist del dueño. YouTube o archivo .mp4 por https (ideal ~1 minuto).</p>
-    <form data-form="help-video"><div class="form-group"><label for="hv-url">URL</label>
-      <input id="hv-url" name="url" type="url" placeholder="https://www.youtube.com/watch?v=..." value="${helpVideo}"></div>
-      <button class="btn btn-primary btn-sm" type="submit">Guardar URL</button></form></div>
   <div class="card"><strong>📋 Auditoría</strong><p class="muted mb">Últimos ${audit.length} eventos del sistema</p>
     <div class="row mb" style="flex-wrap:wrap;gap:8px">
       <select id="audit-cat" data-change="audit-filter" style="max-width:160px">
@@ -506,7 +500,7 @@ async function sistema() {
 acts['bk-run'] = async () => { toast('Haciendo la copia…'); await post('/api/admin/backup/run'); toast('Backup listo'); renderAdmin(); };
 acts['bk-del'] = async (el) => {
   if (!confirm('¿Borrar el backup ' + el.dataset.file + '?')) return;
-  await api('DELETE', '/api/admin/backup/file/' + encodeURIComponent(el.dataset.file));
+  await post('/api/admin/backup/delete', { file: el.dataset.file });
   toast('Backup borrado');
   renderAdmin();
 };
@@ -517,11 +511,6 @@ acts['bk-prune'] = async () => {
   renderAdmin();
 };
 forms['bk-settings'] = async (v) => { await api('PUT', '/api/admin/backup/settings', { auto: v.auto === 'on', keep: +v.keep, warn_days: +v.warn_days }); toast('Ajustes guardados'); renderAdmin(); };
-forms['help-video'] = async (v) => {
-  await api('PUT', '/api/admin/settings/help-video', { url: v.url || '' });
-  toast('URL del video guardada');
-  renderAdmin();
-};
 
 
 // ---------- Novedades (changelog) ----------
