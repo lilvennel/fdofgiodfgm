@@ -140,7 +140,7 @@ forms.site = async (v) => { await api('PUT', '/api/admin/site', { hero: { h1: v.
 
 async function precios() {
   const d = await get('/api/admin/prices'), p = d.prices, s = d.schedule;
-  const n = (id, label, val) => html`<div class="form-group"><label for="${id}">${label}</label><input id="${id}" name="${id}" type="number" min="0" step="100" value="${val}" required></div>`;
+  const n = (id, label, val) => html`<div class="form-group"><label for="${id}">${label}</label><input id="${id}" name="${id}" type="number" min="0" step="1" value="${val}" required></div>`;
   patchEl('#a-body', html`
   <form data-form="prices" class="card">
     <strong>💰 Precios de planes (ARS)</strong>
