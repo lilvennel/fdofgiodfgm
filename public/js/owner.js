@@ -1116,11 +1116,22 @@ forms['staff-permit'] = async (v) => {
 
 
 async function tabFacturas() {
-  const st = await get('/api/owner/billing/status');
-  const inv = st.module_enabled ? await get('/api/owner/invoices') : { invoices: [] };
+  let st = { module_enabled: false, profile_complete: false, missing: [], profile: null };
+  let inv = { invoices: [] };
+  try {
+    st = await get('/api/owner/billing/status');
+    if (st.module_enabled) inv = await get('/api/owner/invoices');
+  } catch (e) {
+    // Si el backend aún no tiene billing o falla, no dejar el spinner infinito
+    patchEl('#tab-body', html`<div class="card"><strong>Facturas</strong>
+      <p class="muted mt">No se pudo cargar el módulo de facturación. Si acabás de actualizar, esperá el redeploy o recargá la página.</p>
+      <p class="muted" style="font-size:.8rem">${e && e.message ? e.message : ''}</p>
+    </div>`);
+    return;
+  }
   const moneyC = (c) => '$ ' + ((Number(c)||0)/100).toLocaleString('es-AR', { minimumFractionDigits: 2 });
   const missing = (st.missing || []).join(', ');
-  patchEl('#o-body', html`
+  patchEl('#tab-body', html`
   <div class="card mb">
     <strong>Datos fiscales</strong>
     <p class="muted mb">Necesarios para emitir comprobantes del servicio. <em>No reemplazan una factura AFIP/ARCA</em>.</p>
