@@ -32,6 +32,9 @@ const ACTION_LABELS = {
   'admin.holidays_synced': 'Feriados sincronizados',
   'admin.backup': 'Backup descargado',
   'admin.backup_run': 'Backup ejecutado',
+  'admin.backup_delete': 'Backup borrado',
+  'admin.backup_prune': 'Backups viejos eliminados',
+  'admin.tenant_delete': 'Negocio eliminado',
 };
 const ACTION_CAT = (a) => {
   if (a.startsWith('employee') || a === 'password.changed') return 'emp';
@@ -93,11 +96,23 @@ async function cuentas() {
     <div class="account-meta">Alta ${fmtDateTime(t.created_at)}${t.paid_until ? ' · hasta ' + new Date(t.paid_until).toLocaleDateString('es-AR') : ''}${t.trial ? ' · 🎁 prueba' : ''}${t.discount_pct ? ` · ${t.discount_pct}% OFF (${t.discount_months} m)` : ''}</div>
     <div style="margin-top:6px">${badge(t.status)}${t.trial ? html` <span class="pill" style="font-size:.7rem;background:#ffedd5;color:#9a3412">Prueba 30 días</span>` : ''}</div></div></div>
     <div class="account-actions">${t.status === 'suspended' || t.status === 'pending_payment' || t.status === 'past_due' ? html`<button class="btn btn-primary btn-sm" data-act="a-status" data-id="${t.id}" data-s="active" type="button">Activar</button>` : html`<button class="btn btn-outline btn-sm" data-act="a-status" data-id="${t.id}" data-s="suspended" type="button">Suspender</button>`}
+    <button class="btn btn-danger btn-sm" data-act="a-del-tenant" data-id="${t.id}" data-name="${t.name}" type="button">Eliminar</button>
     <button class="btn btn-outline btn-sm" data-act="a-disc" data-id="${t.id}" data-name="${t.name}" type="button">Descuento</button>
     <button class="btn btn-outline btn-sm" data-act="a-pw" data-id="${t.id}" type="button">Reset clave</button>
     <a class="btn btn-outline btn-sm" href="/api/admin/tenants/${t.id}/export" title="Paquete JSON para AAIP / orden judicial">📥 Exportar datos</a></div></div>`) : html`<p class="muted">No hay cuentas en esta vista.</p>`}`);
 }
 acts['a-filter'] = (el) => { A.filter = el.dataset.f; load(); };
+acts['a-del-tenant'] = async (el) => {
+  const name = el.dataset.name || '';
+  const id = el.dataset.id;
+  if (!confirm('¿Eliminar PARA SIEMPRE el negocio «' + name + '»? Se borran usuarios, marcas, documentos y archivos. No se puede deshacer.')) return;
+  const typed = prompt('Escribí el nombre exacto del negocio para confirmar:\n' + name);
+  if (typed == null) return;
+  if (typed.trim() !== name && typed.trim() !== String(id)) { toast('No coincide el nombre'); return; }
+  await api('DELETE', '/api/admin/tenants/' + id, { confirm: typed.trim() });
+  toast('Negocio eliminado');
+  renderAdmin();
+};
 acts['a-status'] = async (el) => { if (el.dataset.s === 'suspended' && !confirm('¿Suspender este negocio? Nadie podrá ingresar.')) return; await post(`/api/admin/tenants/${el.dataset.id}/status`, { status: el.dataset.s }); toast('Estado actualizado'); renderAdmin(); };
 acts['a-disc'] = (el) => openModal(html`<h3 style="margin-bottom:8px">Descuento · ${el.dataset.name}</h3><form data-form="a-disc" data-id="${el.dataset.id}"><div class="grid2"><div class="form-group"><label for="dp">% descuento</label><input id="dp" name="pct" type="number" min="0" max="100" value="10" required></div><div class="form-group"><label for="dm">Meses</label><input id="dm" name="months" type="number" min="0" max="36" value="3" required></div></div><button class="btn btn-primary btn-block" type="submit">Asignar</button><button class="btn btn-outline btn-block mt" type="button" data-act="close-modal">Cancelar</button></form>`);
 forms['a-disc'] = async (v, f) => { await post(`/api/admin/tenants/${f.dataset.id}/discount`, { pct: +v.pct, months: +v.months }); closeModal(); toast('Descuento asignado'); load(); };
@@ -437,8 +452,9 @@ async function sistema() {
   <div class="card"><strong>💾 Backups</strong>
     <div class="alert ${b.stale ? 'alert-warn' : 'alert-ok'} mt">${b.age_days === null ? 'Todavía no hay ningún backup.' : b.stale ? `Pasaron ${b.age_days} días desde el último backup (el aviso salta a los ${b.warn_days}).` : `Último backup hace ${b.age_days} días.`}</div>
     <div class="muted">Automático: ${b.last_auto ? (b.last_auto.ok ? `${fmtDateTime(b.last_auto.at)} (${kb(b.last_auto.size)})` : `falló: ${b.last_auto.error}`) : 'todavía no corrió'} · Última descarga: ${b.last_download ? fmtDateTime(b.last_download.at) : 'nunca'}</div>
-    <div class="row mt"><button class="btn btn-primary btn-sm" data-act="bk-run" type="button">Hacer backup ahora</button><a class="btn btn-outline btn-sm" href="/api/admin/backup">Descargar copia de la base</a></div>
-    ${b.files.length ? html`<div style="font-weight:600;font-size:.82rem;margin:12px 0 4px">Copias guardadas en el servidor (data/backups)</div>${b.files.map((f) => html`<div class="hours-emp-row"><span>${f.file} · ${kb(f.size)}</span><a class="btn btn-outline btn-sm" href="/api/admin/backup/file/${f.file}">Descargar</a></div>`)}` : ''}
+    <div class="row mt" style="flex-wrap:wrap;gap:8px"><button class="btn btn-primary btn-sm" data-act="bk-run" type="button">Hacer backup ahora</button><a class="btn btn-outline btn-sm" href="/api/admin/backup">Descargar copia de la base</a><button class="btn btn-outline btn-sm" data-act="bk-prune" type="button">Borrar backups viejos</button></div>
+    <p class="muted" style="font-size:.78rem;margin-top:6px">«Borrar backups viejos» deja solo las N copias configuradas abajo (las más recientes). Recomendado: 3–7 en VPS chico.</p>
+    ${b.files.length ? html`<div style="font-weight:600;font-size:.82rem;margin:12px 0 4px">Copias guardadas en el servidor (data/backups)</div>${b.files.map((f) => html`<div class="hours-emp-row"><span>${f.file} · ${kb(f.size)}</span><span class="row" style="gap:6px"><a class="btn btn-outline btn-sm" href="/api/admin/backup/file/${f.file}">Descargar</a><button class="btn btn-danger btn-sm" data-act="bk-del" data-file="${f.file}" type="button">Borrar</button></span></div>`)}` : ''}
     <form data-form="bk-settings" class="mt"><div class="grid2"><div class="form-group"><label for="bk-keep">Copias que se guardan</label><input id="bk-keep" name="keep" type="number" min="1" max="60" value="${b.keep}"></div><div class="form-group"><label for="bk-warn">Avisar si pasaron más de (días)</label><input id="bk-warn" name="warn_days" type="number" min="1" max="90" value="${b.warn_days}"></div></div>
       <label class="row mb" style="font-size:.85rem"><input type="checkbox" name="auto" ${b.auto ? raw('checked') : ''}> Hacer una copia automática por día</label><button class="btn btn-outline btn-sm" type="submit">Guardar ajustes</button></form>
     <p class="muted mt">Las copias automáticas guardan la <strong>base de datos</strong>. Los archivos subidos (recibos y certificados en <code>data/uploads</code>) y el archivo <code>data/.secret</code> hay que respaldarlos aparte, y conviene llevar una copia fuera del servidor.</p></div>
@@ -463,6 +479,18 @@ async function sistema() {
     }) : html`<p class="muted">Sin eventos todavía.</p>`}</div></div>`);
 }
 acts['bk-run'] = async () => { toast('Haciendo la copia…'); await post('/api/admin/backup/run'); toast('Backup listo'); renderAdmin(); };
+acts['bk-del'] = async (el) => {
+  if (!confirm('¿Borrar el backup ' + el.dataset.file + '?')) return;
+  await api('DELETE', '/api/admin/backup/file/' + encodeURIComponent(el.dataset.file));
+  toast('Backup borrado');
+  renderAdmin();
+};
+acts['bk-prune'] = async () => {
+  if (!confirm('¿Borrar los backups más viejos y dejar solo los configurados en «Copias que se guardan»?')) return;
+  const r = await post('/api/admin/backup/prune', {});
+  toast((r.removed || 0) + ' backup(s) borrados');
+  renderAdmin();
+};
 forms['bk-settings'] = async (v) => { await api('PUT', '/api/admin/backup/settings', { auto: v.auto === 'on', keep: +v.keep, warn_days: +v.warn_days }); toast('Ajustes guardados'); renderAdmin(); };
 
 // ---------- Novedades (changelog) ----------
