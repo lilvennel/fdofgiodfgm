@@ -604,6 +604,18 @@ acts['inv-new'] = async () => {
 };
 acts['coupon-uses'] = async (el) => {
   const r = await get('/api/admin/coupons/' + encodeURIComponent(el.dataset.code) + '/uses');
-  const lines = (r.uses || []).map((u) => `${new Date(u.created_at).toLocaleString('es-AR')} · ${u.tenant_name || u.email} · ${u.context || ''} · desc $ ${((u.discount_cents||0)/100)}`).join('\n') || 'Sin usos';
-  openModal(html`<h3>Usos · ${el.dataset.code}</h3><p class="muted">${r.unique_tenants||0} clientes · total desc. $ ${((r.total_discount_cents||0)/100).toLocaleString('es-AR')}</p><pre style="white-space:pre-wrap;font-size:.85rem;max-height:50vh;overflow:auto">${lines}</pre>`);
-};
+  const rows = (r.uses || []);
+  openModal(html`<h3 style="margin-bottom:6px">Historial · ${el.dataset.code}</h3>
+    <p class="muted mb">${r.unique_tenants||0} clientes únicos · descuento acumulado $ ${((r.total_discount_cents||0)/100).toLocaleString('es-AR')}</p>
+    ${!rows.length ? html`<p class="muted">Todavía no se usó este cupón.</p>` : html`
+    <div class="table-wrap" style="max-height:50vh;overflow:auto">
+      <table class="table"><thead><tr><th>Fecha</th><th>Cliente</th><th>Contexto</th><th>Descuento</th></tr></thead>
+      <tbody>${rows.map((u) => html`<tr>
+        <td>${new Date(u.created_at).toLocaleString('es-AR')}</td>
+        <td>${u.tenant_name || u.email || '—'}</td>
+        <td>${u.context || '—'}</td>
+        <td>$ ${((u.discount_cents||0)/100).toLocaleString('es-AR')}</td>
+      </tr>`)}</tbody></table>
+    </div>`}
+    <button class="btn btn-outline btn-block mt" data-act="close-modal" type="button">Cerrar</button>`);
+}

@@ -263,11 +263,11 @@ export async function showAuth(message, opts = {}) {
             <span class="price-trial-pill">1 mes gratis</span>
             <h3>Esencial</h3>
             <div class="price" data-m="${c.prices.esencial_m ?? c.prices.sub}" data-y="${c.prices.esencial_y ?? c.prices.once}">${money(c.prices.esencial_m ?? c.prices.sub)} <small>/ mes</small></div>
-            <p class="muted" style="font-size:.8rem"><strong>${c.free_employees ?? 40} empleados incluidos · todo Esencial</strong> · 1 sucursal<br><span style="font-size:.75rem">Extras al mismo precio (${money(c.prices.extra)} c/u, pago único)</span></p>
+            <p class="muted" style="font-size:.8rem"><strong>${c.free_employees ?? 40} empleados incluidos · todo Esencial</strong> · 1 sucursal<br><span style="font-size:.75rem">Empleado extra: ${money(c.prices.extra)} c/u (pago único, mismo precio en todos los planes)</span></p>
             <ul>
               <li>Marcación panel + GPS</li>
               <li>QR opcional en puerta</li>
-              <li>Horas, extras y reportes del mes</li>
+              <li>Horas, extras y <strong>reportes</strong> del mes (incluidos)</li>
               <li>Notificaciones al dueño</li>
             </ul>
             <button class="btn btn-primary btn-block" type="button" data-act="pick-plan" data-tier="esencial" data-plan-billing data-billing="sub">Probar Esencial</button>
@@ -277,7 +277,7 @@ export async function showAuth(message, opts = {}) {
             <span class="badge" style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:#4f46e5;color:#fff;font-size:.72rem;font-weight:800;padding:4px 10px;border-radius:999px">Más elegido</span>
             <h3>Pro</h3>
             <div class="price" data-m="${c.prices.pro_m ?? 55000}" data-y="${c.prices.pro_y ?? 450000}">${money(c.prices.pro_m ?? 55000)} <small>/ mes</small></div>
-            <p class="muted" style="font-size:.8rem"><strong>${c.free_employees ?? 40} empleados incluidos</strong> · todo Esencial +<br><span style="font-size:.75rem">Extras al mismo precio (${money(c.prices.extra)} c/u)</span></p>
+            <p class="muted" style="font-size:.8rem"><strong>${c.free_employees ?? 40} empleados incluidos</strong> · todo Esencial +<br><span style="font-size:.75rem">Empleado extra: ${money(c.prices.extra)} c/u (pago único)</span></p>
             <ul>
               <li>Cierre automático de jornada</li>
               <li>Permisos y vacaciones</li>
@@ -289,7 +289,7 @@ export async function showAuth(message, opts = {}) {
           <div class="price-card">
             <h3>Completo</h3>
             <div class="price" data-m="${c.prices.completo_m ?? 70000}" data-y="${c.prices.completo_y ?? 560000}">${money(c.prices.completo_m ?? 70000)} <small>/ mes</small></div>
-            <p class="muted" style="font-size:.8rem"><strong>${c.free_employees ?? 40} empleados incluidos</strong> · todo Pro + módulos<br><span style="font-size:.75rem">Extras disponibles (${money(c.prices.extra)} c/u)</span></p>
+            <p class="muted" style="font-size:.8rem"><strong>${c.free_employees ?? 40} empleados incluidos</strong> · todo Pro + módulos<br><span style="font-size:.75rem">Empleado extra: ${money(c.prices.extra)} c/u (pago único)</span></p>
             <ul>
               <li>Multi-sucursal incluido</li>
               <li>Recibos de sueldo incluido</li>
@@ -359,7 +359,7 @@ export async function showAuth(message, opts = {}) {
         <details><summary>¿Hace falta un QR en la puerta?</summary><p>No es obligatorio. El empleado puede marcar desde su panel con la ubicación activada. El QR es opcional si preferís control en la entrada o una pantalla fija.</p></details>
         <details><summary>¿Qué pasa si marca desde la casa?</summary><p>Configurás el punto del local una vez. Si intentan marcar lejos, el sistema rechaza el intento y te llega un aviso de seguridad.</p></details>
         <details><summary>¿Cómo sé si alguien llegó tarde?</summary><p>En Config cargás la hora de entrada del turno y los minutos de tolerancia. Si marcan después de eso, te llega la notificación. No inicia la jornada sola: solo avisa.</p></details>
-        <details><summary>¿Qué incluye cada plan?</summary><p><strong>Esencial:</strong> marcación, GPS, horas, extras y avisos (1 sucursal). <strong>Pro:</strong> todo eso + permisos, reportes y cierre automático. <strong>Completo:</strong> Pro + multi-sucursal y recibos de sueldo incluidos.</p></details>
+        <details><summary>¿Qué incluye cada plan?</summary><p><strong>Esencial:</strong> marcación, GPS, horas, extras, <strong>reportes</strong> y avisos (1 sucursal, 40 empleados incluidos). Empleados de más: mismo precio por cada uno (pago único). <strong>Pro:</strong> todo Esencial + permisos y cierre automático. <strong>Completo:</strong> Pro + multi-sucursal y recibos de sueldo incluidos.</p></details>
         <details><summary>¿Hay periodo de prueba gratis?</summary><p>Sí, en el <strong>plan Esencial</strong> con <strong>suscripción mensual</strong>: 1 mes de prueba. Al activar, Mercado Pago te pide un medio de pago y <strong>no cobra nada</strong> hasta que termine el mes. Si cancelás antes del primer cobro, no se debita. Pro, Completo y el pago único no incluyen prueba gratis.</p></details>
         <details><summary>¿Qué pasa cuando termina la prueba?</summary><p>Mercado Pago intenta el cobro del plan. Si se aprueba, seguís con el servicio. Si falla el pago o cancelaste, la cuenta pasa a pendiente de pago: el dueño puede regularizar; empleados y encargados quedan sin acceso hasta entonces. Tus datos no se borran.</p></details>
         <details><summary>¿Puedo pagar una sola vez?</summary><p>Sí. En cada plan podés elegir suscripción mensual o pago único (licencia de por vida del plan). El pago único no tiene mes de prueba.</p></details>
@@ -866,21 +866,30 @@ function startLiveDemo() {
   if (_liveTimer) clearInterval(_liveTimer);
   const root = document.getElementById('live-demo');
   if (!root) return;
-  const names = [
+  // Estados que rotan en las 2 filas (antes solo se actualizaba la 1ª y Diego quedaba fijo en Extra)
+  const pool = [
     ['María López · caja', 'pill-g', 'En jornada'],
     ['Diego Ruiz · depósito', 'pill-e', 'Extra'],
     ['Andrea Paz · atención', 'pill-x', 'Fuera'],
     ['Lucía Méndez · cocina', 'pill-g', 'En jornada'],
     ['Pablo Sosa · delivery', 'pill-x', 'Fuera'],
+    ['Diego Ruiz · depósito', 'pill-g', 'En jornada'],
+    ['María López · caja', 'pill-e', 'Extra'],
+    ['Sofía Ríos · depósito', 'pill-g', 'En jornada'],
   ];
   let i = 0, hours = 164, extra = 2.5;
   _liveTimer = setInterval(() => {
     if (!document.getElementById('live-demo')) { clearInterval(_liveTimer); return; }
-    i = (i + 1) % names.length;
+    i = (i + 1) % pool.length;
     const rows = root.querySelectorAll('.live-row');
+    // Fila 0 y 1 = empleados; fila 2 = horas del mes (no tocar el label)
     if (rows[0]) {
-      const [n, cls, st] = names[i];
+      const [n, cls, st] = pool[i];
       rows[0].innerHTML = '<span>' + n + '</span><span class="pill ' + cls + '">' + st + '</span>';
+    }
+    if (rows[1]) {
+      const [n2, cls2, st2] = pool[(i + 3) % pool.length];
+      rows[1].innerHTML = '<span>' + n2 + '</span><span class="pill ' + cls2 + '">' + st2 + '</span>';
     }
     hours += Math.random() > 0.55 ? 0.5 : 0;
     extra = Math.round((extra + (Math.random() * 0.25 - 0.05)) * 10) / 10;
