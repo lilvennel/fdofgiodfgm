@@ -18,6 +18,28 @@ const roleLabel = (r) => ({
   employee: 'Empleado', manager: 'Encargado', manager_ext: 'Encargado externo',
   hr: 'RRHH', hr_ext: 'RRHH externo', accountant: 'Contador', accountant_ext: 'Contador externo',
 }[r] || r);
+const ROLE_BADGE = {
+  manager: { cls: 'rb-manager', ico: '👤' },
+  manager_ext: { cls: 'rb-manager-ext', ico: '👤' },
+  hr: { cls: 'rb-hr', ico: '👥' },
+  hr_ext: { cls: 'rb-hr-ext', ico: '👥' },
+  accountant: { cls: 'rb-acc', ico: '📒' },
+  accountant_ext: { cls: 'rb-acc-ext', ico: '📒' },
+};
+const roleBadge = (role) => {
+  if (!role || role === 'employee') return '';
+  const m = ROLE_BADGE[role] || { cls: 'rb-default', ico: '' };
+  return html`<span class="role-badge ${m.cls}" title="${roleLabel(role)}">${m.ico ? html`<span class="rb-ico" aria-hidden="true">${m.ico}</span>` : ''}${roleLabel(role)}</span>`;
+};
+const roleBannerKey = () => 'asistok_hide_role_banner_' + (S.me?.user?.id || 'x');
+const roleBannerHidden = () => { try { return localStorage.getItem(roleBannerKey()) === '1'; } catch { return false; } };
+const roleBannerText = () => {
+  const r = S.me?.user?.role;
+  if (isManager()) return { ico: '👤', title: roleLabel(r), body: roleMarks(r) ? 'Ves tu sucursal (equipo, permisos, reportes). Podés marcar asistencia; tus pedidos los autoriza RRHH o el dueño.' : 'Ves tu sucursal. Rol externo: no marcás por horas. Tus pedidos los autoriza RRHH o el dueño.' };
+  if (isHr()) return { ico: '👥', title: roleLabel(r), body: roleMarks(r) ? 'Operación del negocio (asistencia y permisos). Podés marcar; tus pedidos los autoriza el dueño.' : 'Operación del negocio. Rol externo: no marcás. Tus pedidos los autoriza el dueño.' };
+  if (isAccountant()) return { ico: '📒', title: roleLabel(r), body: roleMarks(r) ? 'Reportes y horas. También podés marcar si trabajás en el local.' : 'Reportes y horas. Rol externo: sin marcación por horas.' };
+  return null;
+};
 const tabsFor = () => {
   const r = S.me?.user?.role;
   if (r === 'manager') return TABS_MANAGER;
@@ -52,9 +74,15 @@ export async function renderOwner() {
     <button class="btn btn-sm btn-outline" data-act="logout" type="button">Cerrar sesión</button></header>
   <main class="dash-body">
     ${S.cfg.email_verification && !S.me.user.email_verified ? html`<div class="alert alert-warn row between"><span>✉️ Confirmá tu email: te enviamos un link a ${S.me.user.email}.</span><button class="link" type="button" data-act="resend-verify">Reenviar email</button></div>` : ''}
-    ${isManager() ? html`<div class="alert alert-info" style="background:#ecfeff;border-color:#a5f3fc;color:#155e75">👤 <strong>${roleLabel(S.me.user.role)}</strong> · Ves tu sucursal.${roleMarks(S.me.user.role) ? ' Podés marcar asistencia.' : ' No marcás (externo / no por horas).'} Pedidos los autoriza RRHH o el dueño.</div>` : ''}
-    ${isHr() ? html`<div class="alert alert-info" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534">👥 <strong>${roleLabel(S.me.user.role)}</strong> · Operación del negocio.${roleMarks(S.me.user.role) ? ' Podés marcar.' : ' No marcás (externo).'} Tus pedidos los autoriza el dueño.</div>` : ''}
-    ${isAccountant() ? html`<div class="alert alert-info" style="background:#fefce8;border-color:#fde68a;color:#854d0e">📒 <strong>${roleLabel(S.me.user.role)}</strong> · Reportes y horas.${roleMarks(S.me.user.role) ? ' También podés marcar si trabajás en el local.' : ' Rol externo: sin marcación por horas.'}</div>` : ''}
+    ${(() => {
+      const rb = roleBannerText();
+      if (!rb || roleBannerHidden()) return '';
+      return html`<div class="role-banner" role="status">
+        <span class="role-banner-ico" aria-hidden="true">${rb.ico}</span>
+        <div class="role-banner-body"><strong>${rb.title}</strong> · ${rb.body}</div>
+        <button type="button" class="role-banner-x" data-act="hide-role-banner" title="Ocultar" aria-label="Ocultar aviso">✕</button>
+      </div>`;
+    })()}
     ${!isStaffOnly() && tenant.trial && tenant.trial_until ? html`<div class="alert alert-info" style="background:#fff7ed;border-color:#fed7aa;color:#9a3412">🎁 <strong>Prueba gratis</strong> · Acceso hasta el <strong>${new Date(tenant.trial_until).toLocaleDateString('es-AR')}</strong>. Mercado Pago cobrará el plan automáticamente al terminar (si no cancelás la suscripción).</div>` : ''}
     ${!isStaffOnly() && notice ? html`<div class="alert alert-warn">📈 ${notice}</div>` : ''}
     ${!isStaffOnly() && ob && ob.dismissed && !ob.all_done ? html`<div class="alert alert-warn row between"><span>🧭 Te faltan ${ob.total - ob.completed} paso(s) para dejar todo listo.</span><button class="link" type="button" data-act="ob-reopen">Ver checklist</button></div>` : ''}
@@ -357,7 +385,7 @@ async function tabEmpleados() {
       <button class="btn btn-outline btn-sm" data-act="copy" data-text="${link}" type="button">Copiar link de registro</button></div>
     ${pend.length ? html`<div class="card" style="background:var(--bg)"><strong>Pendientes de autorización</strong><p class="muted mb">Se registraron con el link/QR y esperan tu OK.</p>${pend.map(pendingRow)}</div>` : ''}
     ${employees.filter((e) => e.status !== 'pending' && e.status !== 'rejected').map((e) => html`<div class="emp-row" data-act="emp-detail" data-id="${e.id}"><div class="emp-av">${initials(e.name)}</div>
-      <div class="grow"><div style="font-weight:600;font-size:.88rem">${e.name}${e.role && e.role !== 'employee' ? html` <span class="pill" style="font-size:.65rem;background:${e.role.includes('ext') ? '#f1f5f9' : e.role.includes('hr') ? '#dcfce7' : e.role.includes('accountant') ? '#fef9c3' : '#e0f2fe'};color:${e.role.includes('ext') ? '#475569' : e.role.includes('hr') ? '#166534' : e.role.includes('accountant') ? '#854d0e' : '#075985'}">${roleLabel(e.role)}</span>` : ''}</div><div class="muted">${e.cargo || 'Sin cargo'} · ${(branches.find((b) => b.id === e.branch_id) || {}).name || ''}</div></div>
+      <div class="grow"><div style="font-weight:600;font-size:.88rem">${e.name}${roleBadge(e.role)}</div><div class="muted">${e.cargo || 'Sin cargo'} · ${(branches.find((b) => b.id === e.branch_id) || {}).name || ''}</div></div>
       ${e.status === 'active' ? badge(e.state) : badge(e.status)}</div>`)}
     ${employees.length ? '' : html`<p class="muted">Todavía no cargaste empleados.</p>`}</div>`);
 }
