@@ -4,17 +4,34 @@ import { startCheckout } from './app.js';
 
 const O = { tab: 'inicio', showNews: false, period: null, qrBranch: null, qrTimer: null, emps: [], branches: [] };
 const TABS_OWNER = [['inicio', 'Inicio'], ['notif', 'Notif.'], ['solicitudes', 'Solicitudes'], ['empleados', 'Empleados'], ['qr', 'Local'], ['sucursales', 'Sucursales'], ['reportes', 'Reportes'], ['facturas', 'Facturas'], ['config', 'Config']];
+// Internos: marcan. Externos (*_ext): mismo panel operativo sin pestaña Marcar (sueldo aparte / no por horas).
 const TABS_MANAGER = [['inicio', 'Inicio'], ['notif', 'Notif.'], ['solicitudes', 'Permisos'], ['empleados', 'Mi equipo'], ['mi-marcar', 'Marcar'], ['mi-permisos', 'Mis pedidos'], ['reportes', 'Reportes']];
+const TABS_MANAGER_EXT = [['inicio', 'Inicio'], ['notif', 'Notif.'], ['solicitudes', 'Permisos'], ['empleados', 'Mi equipo'], ['mi-permisos', 'Mis pedidos'], ['reportes', 'Reportes']];
 const TABS_HR = [['inicio', 'Inicio'], ['notif', 'Notif.'], ['solicitudes', 'Solicitudes'], ['empleados', 'Empleados'], ['mi-marcar', 'Marcar'], ['mi-permisos', 'Mis pedidos'], ['reportes', 'Reportes']];
+const TABS_HR_EXT = [['inicio', 'Inicio'], ['notif', 'Notif.'], ['solicitudes', 'Solicitudes'], ['empleados', 'Empleados'], ['mi-permisos', 'Mis pedidos'], ['reportes', 'Reportes']];
+const TABS_ACC = [['inicio', 'Inicio'], ['reportes', 'Reportes'], ['mi-marcar', 'Marcar'], ['mi-permisos', 'Mis pedidos']];
+const TABS_ACC_EXT = [['inicio', 'Inicio'], ['reportes', 'Reportes'], ['mi-permisos', 'Mis pedidos']];
+const ROLE_BASE = { manager: 'manager', manager_ext: 'manager', hr: 'hr', hr_ext: 'hr', accountant: 'accountant', accountant_ext: 'accountant', employee: 'employee' };
+const roleBase = (r) => ROLE_BASE[r] || r;
+const roleMarks = (r) => !String(r || '').endsWith('_ext') && r !== 'owner';
+const roleLabel = (r) => ({
+  employee: 'Empleado', manager: 'Encargado', manager_ext: 'Encargado externo',
+  hr: 'RRHH', hr_ext: 'RRHH externo', accountant: 'Contador', accountant_ext: 'Contador externo',
+}[r] || r);
 const tabsFor = () => {
   const r = S.me?.user?.role;
   if (r === 'manager') return TABS_MANAGER;
+  if (r === 'manager_ext') return TABS_MANAGER_EXT;
   if (r === 'hr') return TABS_HR;
+  if (r === 'hr_ext') return TABS_HR_EXT;
+  if (r === 'accountant') return TABS_ACC;
+  if (r === 'accountant_ext') return TABS_ACC_EXT;
   return TABS_OWNER;
 };
-const isManager = () => S.me?.user?.role === 'manager';
-const isHr = () => S.me?.user?.role === 'hr';
-const isStaffOnly = () => isManager() || isHr(); // no dueño
+const isManager = () => roleBase(S.me?.user?.role) === 'manager';
+const isHr = () => roleBase(S.me?.user?.role) === 'hr';
+const isAccountant = () => roleBase(S.me?.user?.role) === 'accountant';
+const isStaffOnly = () => isManager() || isHr() || isAccountant();
 
 const SWATCHES = ['#0f766e', '#16a34a', '#2563eb', '#7c3aed', '#db2777', '#ea580c'];
 const loading = html`<p class="muted" style="padding:24px;text-align:center"><span class="spinner"></span></p>`;
@@ -35,8 +52,9 @@ export async function renderOwner() {
     <button class="btn btn-sm btn-outline" data-act="logout" type="button">Cerrar sesión</button></header>
   <main class="dash-body">
     ${S.cfg.email_verification && !S.me.user.email_verified ? html`<div class="alert alert-warn row between"><span>✉️ Confirmá tu email: te enviamos un link a ${S.me.user.email}.</span><button class="link" type="button" data-act="resend-verify">Reenviar email</button></div>` : ''}
-    ${isManager() ? html`<div class="alert alert-info" style="background:#ecfeff;border-color:#a5f3fc;color:#155e75">👤 <strong>Modo encargado</strong> · Ves tu sucursal (equipo, permisos, reportes). También podés <strong>marcar asistencia</strong> y pedir permisos; tus pedidos los autoriza RRHH o el dueño. No gestionás pagos ni la config general.</div>` : ''}
-    ${isHr() ? html`<div class="alert alert-info" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534">👥 <strong>Modo RRHH</strong> · Ves asistencia y permisos de todo el negocio (autorizás empleados y encargados). También podés <strong>marcar</strong> y pedir permisos; tus pedidos los autoriza el dueño. No gestionás pagos ni la config general.</div>` : ''}
+    ${isManager() ? html`<div class="alert alert-info" style="background:#ecfeff;border-color:#a5f3fc;color:#155e75">👤 <strong>${roleLabel(S.me.user.role)}</strong> · Ves tu sucursal.${roleMarks(S.me.user.role) ? ' Podés marcar asistencia.' : ' No marcás (externo / no por horas).'} Pedidos los autoriza RRHH o el dueño.</div>` : ''}
+    ${isHr() ? html`<div class="alert alert-info" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534">👥 <strong>${roleLabel(S.me.user.role)}</strong> · Operación del negocio.${roleMarks(S.me.user.role) ? ' Podés marcar.' : ' No marcás (externo).'} Tus pedidos los autoriza el dueño.</div>` : ''}
+    ${isAccountant() ? html`<div class="alert alert-info" style="background:#fefce8;border-color:#fde68a;color:#854d0e">📒 <strong>${roleLabel(S.me.user.role)}</strong> · Reportes y horas.${roleMarks(S.me.user.role) ? ' También podés marcar si trabajás en el local.' : ' Rol externo: sin marcación por horas.'}</div>` : ''}
     ${!isStaffOnly() && tenant.trial && tenant.trial_until ? html`<div class="alert alert-info" style="background:#fff7ed;border-color:#fed7aa;color:#9a3412">🎁 <strong>Prueba gratis</strong> · Acceso hasta el <strong>${new Date(tenant.trial_until).toLocaleDateString('es-AR')}</strong>. Mercado Pago cobrará el plan automáticamente al terminar (si no cancelás la suscripción).</div>` : ''}
     ${!isStaffOnly() && notice ? html`<div class="alert alert-warn">📈 ${notice}</div>` : ''}
     ${!isStaffOnly() && ob && ob.dismissed && !ob.all_done ? html`<div class="alert alert-warn row between"><span>🧭 Te faltan ${ob.total - ob.completed} paso(s) para dejar todo listo.</span><button class="link" type="button" data-act="ob-reopen">Ver checklist</button></div>` : ''}
@@ -339,7 +357,7 @@ async function tabEmpleados() {
       <button class="btn btn-outline btn-sm" data-act="copy" data-text="${link}" type="button">Copiar link de registro</button></div>
     ${pend.length ? html`<div class="card" style="background:var(--bg)"><strong>Pendientes de autorización</strong><p class="muted mb">Se registraron con el link/QR y esperan tu OK.</p>${pend.map(pendingRow)}</div>` : ''}
     ${employees.filter((e) => e.status !== 'pending' && e.status !== 'rejected').map((e) => html`<div class="emp-row" data-act="emp-detail" data-id="${e.id}"><div class="emp-av">${initials(e.name)}</div>
-      <div class="grow"><div style="font-weight:600;font-size:.88rem">${e.name}${e.role === 'manager' ? html` <span class="pill" style="font-size:.65rem">Encargado</span>` : e.role === 'hr' ? html` <span class="pill" style="font-size:.65rem;background:#dcfce7;color:#166534">RRHH</span>` : ''}</div><div class="muted">${e.cargo || 'Sin cargo'} · ${(branches.find((b) => b.id === e.branch_id) || {}).name || ''}</div></div>
+      <div class="grow"><div style="font-weight:600;font-size:.88rem">${e.name}${e.role && e.role !== 'employee' ? html` <span class="pill" style="font-size:.65rem;background:${e.role.includes('ext') ? '#f1f5f9' : e.role.includes('hr') ? '#dcfce7' : e.role.includes('accountant') ? '#fef9c3' : '#e0f2fe'};color:${e.role.includes('ext') ? '#475569' : e.role.includes('hr') ? '#166534' : e.role.includes('accountant') ? '#854d0e' : '#075985'}">${roleLabel(e.role)}</span>` : ''}</div><div class="muted">${e.cargo || 'Sin cargo'} · ${(branches.find((b) => b.id === e.branch_id) || {}).name || ''}</div></div>
       ${e.status === 'active' ? badge(e.state) : badge(e.status)}</div>`)}
     ${employees.length ? '' : html`<p class="muted">Todavía no cargaste empleados.</p>`}</div>`);
 }
@@ -398,11 +416,19 @@ acts['emp-detail'] = async (el) => {
     ${S.me.user.role === 'owner' && e.status === 'active' ? html`
     <div class="card" style="margin-top:10px;padding:12px">
       <strong style="font-size:.9rem">Rol en el sistema</strong>
-      <p class="muted" style="font-size:.8rem;margin:4px 0 8px">Ahora: <strong>${e.role === 'manager' ? 'Encargado de sucursal' : e.role === 'hr' ? 'RRHH' : 'Empleado'}</strong></p>
+      <p class="muted" style="font-size:.8rem;margin:4px 0 8px">Ahora: <strong>${roleLabel(e.role || 'employee')}</strong>${roleMarks(e.role || 'employee') ? ' · marca asistencia' : ' · no marca (externo / no por horas)'}</p>
+      <p class="muted" style="font-size:.75rem;margin:0 0 6px"><strong>Con marcación</strong> (personal del local / por horas)</p>
       <div class="row" style="flex-wrap:wrap;gap:6px">
         <button class="btn ${e.role === 'employee' || !e.role ? 'btn-primary' : 'btn-outline'} btn-sm" data-act="emp-role" data-id="${id}" data-role="employee" type="button">Empleado</button>
         <button class="btn ${e.role === 'manager' ? 'btn-primary' : 'btn-outline'} btn-sm" data-act="emp-role" data-id="${id}" data-role="manager" type="button">Encargado</button>
         <button class="btn ${e.role === 'hr' ? 'btn-primary' : 'btn-outline'} btn-sm" data-act="emp-role" data-id="${id}" data-role="hr" type="button">RRHH</button>
+        <button class="btn ${e.role === 'accountant' ? 'btn-primary' : 'btn-outline'} btn-sm" data-act="emp-role" data-id="${id}" data-role="accountant" type="button">Contador</button>
+      </div>
+      <p class="muted" style="font-size:.75rem;margin:10px 0 6px"><strong>Sin marcación</strong> (externos, sueldo aparte, no cuentan por horas)</p>
+      <div class="row" style="flex-wrap:wrap;gap:6px">
+        <button class="btn ${e.role === 'manager_ext' ? 'btn-primary' : 'btn-outline'} btn-sm" data-act="emp-role" data-id="${id}" data-role="manager_ext" type="button">Encargado ext.</button>
+        <button class="btn ${e.role === 'hr_ext' ? 'btn-primary' : 'btn-outline'} btn-sm" data-act="emp-role" data-id="${id}" data-role="hr_ext" type="button">RRHH ext.</button>
+        <button class="btn ${e.role === 'accountant_ext' ? 'btn-primary' : 'btn-outline'} btn-sm" data-act="emp-role" data-id="${id}" data-role="accountant_ext" type="button">Contador ext.</button>
       </div>
       <p class="muted" style="font-size:.75rem;margin-top:8px">Encargado = solo su sucursal. RRHH = ve todo el negocio (sin pagos ni config).</p>
     </div>` : ''}</div>
@@ -996,7 +1022,7 @@ acts['emp-role'] = async (el) => {
   const id = el.dataset.id;
   try {
     await post('/api/owner/employees/' + id + '/role', { role });
-    toast(role === 'manager' ? 'Ahora es encargado · debe volver a ingresar' : role === 'hr' ? 'Ahora es RRHH · debe volver a ingresar' : 'Volvió a empleado · debe volver a ingresar');
+    toast('Rol: ' + roleLabel(role) + ' · debe volver a ingresar');
   } catch (err) {
     toast(err.message || 'No se pudo cambiar el rol');
     return;
@@ -1218,18 +1244,33 @@ acts['marks-purge'] = async (el) => {
   if (!confirm('¿Borrar marcaciones de hace más de ' + m + ' meses? No se puede deshacer.')) return;
   const typed = prompt('Escribí BORRAR para confirmar');
   if (typed !== 'BORRAR') return toast('Cancelado');
-  const r = await post('/api/owner/marks/purge', { months: +m, confirm: 'BORRAR' });
-  toast(r.message || ('Borradas: ' + r.deleted));
+  try {
+    const r = await post('/api/owner/marks/purge', { months: +m, confirm: 'BORRAR' });
+    toast(r.message || ('Borradas: ' + r.deleted));
+  } catch (e) {
+    if (e.status === 404) toast('Falta actualizar el servidor (routes/ops-extra.js).');
+    else throw e;
+  }
 };
 acts['account-delete-req'] = async () => {
   if (!confirm('¿Solicitar la baja de toda la cuenta? AsistOK revisará el pedido antes de borrar.')) return;
   const note = prompt('Motivo (opcional)') || '';
-  const r = await post('/api/owner/account/delete-request', { note });
-  toast(r.message || 'Pedido enviado');
-  loadTab();
+  try {
+    const r = await post('/api/owner/account/delete-request', { note });
+    toast(r.message || 'Pedido enviado');
+    loadTab();
+  } catch (e) {
+    if (e.status === 404) toast('Falta actualizar el servidor (routes/ops-extra.js).');
+    else throw e;
+  }
 };
 acts['account-delete-cancel'] = async () => {
-  await post('/api/owner/account/delete-request/cancel');
-  toast('Pedido cancelado');
-  loadTab();
+  try {
+    await post('/api/owner/account/delete-request/cancel');
+    toast('Pedido cancelado');
+    loadTab();
+  } catch (e) {
+    if (e.status === 404) toast('Falta actualizar el servidor (routes/ops-extra.js).');
+    else throw e;
+  }
 };

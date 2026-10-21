@@ -784,7 +784,7 @@ export async function boot() {
     return paymentScreen(q.get('pay') === 'fail' ? 'El pago no se completó. Podés intentarlo de nuevo.' : '');
   }
   if (q.get('pay')) { toast('Pago recibido'); cleanUrl(); q.delete('pay'); }
-  if (user.role === 'owner' || user.role === 'manager' || user.role === 'hr') return renderOwner();
+  if (user.role === 'owner' || user.role === 'manager' || user.role === 'hr' || user.role === 'accountant' || user.role === 'manager_ext' || user.role === 'hr_ext' || user.role === 'accountant_ext') return renderOwner();
   if (S.markCode) return renderMark();
   return renderEmployee();
 }
