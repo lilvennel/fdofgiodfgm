@@ -181,12 +181,11 @@ async function tabInicio() {
       <select id="per" data-change="period">${periodOptions(O.period)}</select>
     </div>
   </div>
-  <div class="stats-row dash-stats">
-    <div class="stat stat-pro"><div class="stat-l">Horas del equipo</div><div class="stat-v" style="color:var(--theme)">${fmtH(t0.total_h)}</div><div class="muted">${t0.pct}% de ${fmtH(t0.expected_h)}</div>
-      <div class="bar-track mt"><div class="bar-fill" style="width:${pct}%"></div></div></div>
-    <div class="stat stat-pro"><div class="stat-l">Extras</div><div class="stat-v" style="color:#0891b2">${fmtH(t0.extra_h)}</div><div class="muted">En el período</div></div>
-    <div class="stat stat-pro"><div class="stat-l">Horas laborables</div><div class="stat-v">${fmtH(d.expected_per_emp)}</div><div class="muted">${days} · por persona</div></div>
-    <div class="stat stat-pro"><div class="stat-l">Presentes / fuera</div><div class="stat-v">${on} <span class="muted" style="font-size:1rem;font-weight:600">/ ${off}</span></div><div class="muted">Ahora mismo</div></div>
+  <div class="dash-stat-grid">
+    <div class="dash-stat-card ds-on"><div class="dsl">En jornada</div><div class="dsv">${on}</div><div class="dss">ahora · ${off} fuera</div></div>
+    <div class="dash-stat-card ds-pct"><div class="dsl">Horas del equipo</div><div class="dsv">${fmtH(t0.total_h)}</div><div class="dss">${t0.pct}% de ${fmtH(t0.expected_h)}</div></div>
+    <div class="dash-stat-card"><div class="dsl">Extras</div><div class="dsv" style="color:#0891b2">${fmtH(t0.extra_h)}</div><div class="dss">en el período</div></div>
+    <div class="dash-stat-card ds-warn"><div class="dsl">Avisos</div><div class="dsv">${d.notif_count || 0}</div><div class="dss">${days}</div></div>
   </div>
   ${d.employees.length ? html`<div class="card dash-chart-card">
     <strong>Horas por empleado</strong>
@@ -211,11 +210,11 @@ async function tabInicio() {
   ${d.pending.length ? html`<div class="card"><strong>Solicitudes de alta</strong>${d.pending.map((p) => html`<div class="hours-emp-row"><div><div style="font-weight:600">${p.name}</div><div class="muted">${p.email}</div></div>
     <div class="row"><button class="btn btn-primary btn-sm" data-act="emp-ok" data-id="${p.id}" type="button">Aprobar</button><button class="btn btn-outline btn-sm" data-act="emp-no" data-id="${p.id}" type="button">Rechazar</button></div></div>`)}</div>` : ''}
   <div class="card"><div class="row between mb"><strong>${d.is_manager ? 'Mi equipo ahora' : 'Equipo ahora'}</strong><span class="muted">${d.employees.length} persona${d.employees.length === 1 ? '' : 's'}${d.manager_branch ? ' · ' + d.manager_branch.name : ''}</span></div>
-  <div class="emp-grid-live">${d.employees.map((e) => html`<div class="live-card" data-act="emp-detail" data-id="${e.id}"><div class="emp-av" style="margin:0 auto 8px">${e.name.slice(0, 1)}</div>
+  ${!d.employees.length ? html`<div class="empty-state"><div class="es-ico">🏪</div><p class="es-title">Nadie en el equipo todavía</p><p class="es-text">Cuando agregues personas, vas a ver quién está en jornada acá.</p></div>` : html`<div class="emp-grid-live">${d.employees.map((e) => html`<div class="live-card" data-act="emp-detail" data-id="${e.id}"><div class="emp-av" style="margin:0 auto 8px">${e.name.slice(0, 1)}</div>
     <div style="font-weight:600;font-size:.85rem">${e.name.split(' ')[0]}</div>
     <div class="status-live ${e.state === 'jornada' ? 'jornada' : e.state === 'extra' ? 'extra' : 'fuera'}">${e.state === 'jornada' ? 'En jornada' : e.state === 'extra' ? 'Extra' : 'Fuera'}</div>
     ${e.since ? html`<div class="muted" style="font-size:.72rem">Desde ${fmtTime(e.since)}</div>` : e.last_mark_at ? html`<div class="muted" style="font-size:.72rem">Última marca ${fmtTime(e.last_mark_at)}</div>` : html`<div class="muted" style="font-size:.72rem">Sin marcas hoy</div>`}
-    ${e.late_count ? html`<div style="font-size:.7rem;font-weight:700;color:#d97706;margin-top:4px">${e.late_count} tardanza${e.late_count === 1 ? '' : 's'}</div>` : ''}</div>`)}</div></div>
+    ${e.late_count ? html`<div style="font-size:.7rem;font-weight:700;color:#d97706;margin-top:4px">${e.late_count} tardanza${e.late_count === 1 ? '' : 's'}</div>` : ''}</div>`)}</div>`}</div>
   ${d.rrhh ? html`<div class="card"><strong>📊 RRHH del período</strong>
     <div class="stats-row" style="margin-top:10px">
       <div class="stat"><div class="stat-l">Tardanzas</div><div class="stat-v" style="color:#d97706">${d.rrhh.late_total}</div></div>
@@ -348,7 +347,7 @@ async function tabSolicitudes() {
         <button class="btn btn-primary btn-sm" data-act="permit-decide" data-id="${p.ref_id || p.id}" data-ok="1" type="button">Aprobar</button>
         <button class="btn btn-outline btn-sm" data-act="permit-decide" data-id="${p.ref_id || p.id}" data-ok="0" type="button">Rechazar</button>
       </div>
-    </div>`) : html`<p class="muted">No hay permisos pendientes.</p>`}
+    </div>`) : html`<div class="empty-state"><div class="es-ico">✅</div><p class="es-title">Sin permisos pendientes</p><p class="es-text">Cuando alguien pida un día libre o vacaciones, va a aparecer acá.</p></div>`}
   </div>
 
   <div class="card mt"><strong>Certificados recientes</strong>
@@ -387,7 +386,7 @@ async function tabEmpleados() {
     ${employees.filter((e) => e.status !== 'pending' && e.status !== 'rejected').map((e) => html`<div class="emp-row" data-act="emp-detail" data-id="${e.id}"><div class="emp-av">${initials(e.name)}</div>
       <div class="grow"><div style="font-weight:600;font-size:.88rem">${e.name}${roleBadge(e.role)}</div><div class="muted">${e.cargo || 'Sin cargo'} · ${(branches.find((b) => b.id === e.branch_id) || {}).name || ''}</div></div>
       ${e.status === 'active' ? badge(e.state) : badge(e.status)}</div>`)}
-    ${employees.length ? '' : html`<p class="muted">Todavía no cargaste empleados.</p>`}</div>`);
+    ${employees.length ? '' : html`<div class="empty-state"><div class="es-ico">👥</div><p class="es-title">Todavía no hay empleados</p><p class="es-text">Agregá al equipo o compartí el link / QR de alta.</p>${!isStaffOnly() ? html`<button class="btn btn-primary btn-sm" data-act="emp-add" type="button">+ Agregar empleado</button>` : html`<span class="muted" style="font-size:.85rem">Pedile al dueño que dé de alta al equipo.</span>`}</div>`}</div>`);
 }
 acts.copy = (el) => copyText(el.dataset.text);
 acts['alta-qr'] = () => { const link = `${S.me.app_url}/alta/${S.me.tenant.slug}`; openModal(html`<h3 style="margin-bottom:6px">QR de alta de empleados</h3><p class="muted">Mostralo o imprimilo. Quien lo escanee queda pendiente hasta que lo autorices.</p><div class="qr-big">${raw(qrSvg(link))}</div><p class="muted" style="text-align:center;word-break:break-all">${link}</p><button class="btn btn-outline btn-block mt" data-act="close-modal" type="button">Cerrar</button>`); };
@@ -805,7 +804,7 @@ async function tabReportes() {
   O.lastReport = r;
 }
 const tableHtml = (r) => {
-  if (!r.rows.length) return html`<div class="rep-empty">No hay datos para este período.<br><span style="font-size:.82rem">Cuando haya marcaciones, van a aparecer acá.</span></div>`;
+  if (!r.rows.length) return html`<div class="empty-state"><div class="es-ico">📊</div><p class="es-title">Sin datos en este período</p><p class="es-text">Cuando haya marcaciones, el reporte se arma solo.</p></div>`;
   const diffIdx = r.columns.findIndex((c) => /diferencia/i.test(c));
   return html`<table class="tbl"><thead><tr>${r.columns.map((c) => html`<th>${c}</th>`)}</tr></thead><tbody>${r.rows.map((row) => html`<tr>${row.map((c, i) => {
     let cls = '';
@@ -1173,7 +1172,7 @@ async function tabMiPermisos() {
     ${permits.length ? permits.map((p) => html`<div class="hours-emp-row" style="display:block;margin-bottom:8px">
       <div style="font-weight:600;font-size:.88rem">${p.type} · ${p.from_date}${p.to_date && p.to_date !== p.from_date ? ' → ' + p.to_date : ''}</div>
       <div class="muted">${p.status === 'pending' ? 'Pendiente de autorización' : p.status === 'approved' ? 'Aprobado' : 'Rechazado'}${p.note ? ' · ' + p.note : ''}</div>
-    </div>`) : html`<p class="muted">Todavía no pediste permisos.</p>`}
+    </div>`) : html`<div class="empty-state"><div class="es-ico">📋</div><p class="es-title">Todavía no pediste permisos</p><p class="es-text">Desde acá podés solicitar días libres o vacaciones.</p></div>`}
   </div>`);
 }
 

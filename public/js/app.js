@@ -163,12 +163,12 @@ export async function showAuth(message, opts = {}) {
     <section class="hero">
       <div class="wrap grid-2">
         <div>
-          <span class="tag">Hecho para comercios y equipos en Argentina</span>
+          <span class="hero-pill">GPS + QR · horas claras · Mercado Pago</span>
           <h1 style="margin-top:14px">Dejá la planilla.<br>Controlá quién está<br><span class="h1-last">y <span id="tw-text" class="tw-inline">recuperá tiempo</span><span class="tw-dots" aria-hidden="true">...</span></span></h1>
           <p>AsistOK es el control de asistencia online para tu negocio: marcación simple desde el celular, ubicación del local, horas y extras claras. Fácil desde el primer día.</p>
           <div class="hero-cta">
-            <button class="btn btn-primary" type="button" data-act="go-pricing">Ver planes</button>
-            <button class="btn btn-outline" type="button" data-act="go-register">Registrarse</button>
+            <button class="btn btn-primary" type="button" data-act="go-register">Probar ahora</button>
+            <button class="btn btn-outline" type="button" data-act="go-pricing">Ver planes</button>
             <a class="btn btn-outline" href="#producto">Cómo funciona</a>
           </div>
           <div class="stats">
@@ -445,6 +445,18 @@ acts['go-register'] = async () => {
   if (!same) await showAuth(undefined, { skipCfg: true });
   setTimeout(scrollToLoginIfNeeded, 40);
 };
+function bindLandingNavGlass() {
+  const nav = document.querySelector('.ok-landing .nav');
+  if (!nav) return;
+  if (nav.dataset.glassBound) {
+    nav.classList.toggle('nav-scrolled', window.scrollY > 8);
+    return;
+  }
+  nav.dataset.glassBound = '1';
+  const onScroll = () => nav.classList.toggle('nav-scrolled', window.scrollY > 8);
+  onScroll();
+  window.addEventListener('scroll', onScroll, { passive: true });
+}
 acts['go-pricing'] = () => {
   document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
@@ -795,6 +807,7 @@ let _twTimer = null;
 let _liveTimer = null;
 
 function initLandingEffects() {
+  bindLandingNavGlass();
   startTypewriter();
   startLiveDemo();
   loadReviews();
