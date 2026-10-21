@@ -12,47 +12,56 @@ const fc = require('../lib/fieldcrypto');
 const billing = require('../lib/billing');
 const { clean, emailOk, intIn, isoDateOk, hhmmOk, periodOf, decodeUpload } = require('./common');
 
-const A = { auth: ['owner', 'manager', 'hr'] }; // dueño, encargado o RRHH
+const A = { auth: ['owner', 'manager', 'hr', 'accountant', 'manager_ext', 'hr_ext', 'accountant_ext'] }; // dueño, encargado o RRHH
 const A_OWNER = { auth: 'owner' }; // solo dueño (pagos, borrar datos, config sensible)
 const requireOwner = (ctx) => {
   if (ctx.user.role !== 'owner') throw forbidden('Solo el dueño del negocio puede hacer esto');
 };
-/** Encargado solo ve su sucursal */
-const managerBranch = (ctx) => (ctx.user.role === 'manager' ? ctx.user.branch_id : null);
-/** RRHH ve todo el negocio (como dueño en operación) pero sin pagos/config sensible */
-const isStaffAdmin = (ctx) => ctx.user.role === 'owner' || ctx.user.role === 'hr';
+const STAFF_SQL = dom.STAFF_ROLES_SQL || "'employee','manager','hr','accountant','manager_ext','hr_ext','accountant_ext'";
+const baseRole = (r) => (dom.roleBase ? dom.roleBase(r) : r);
 
-/** Quién puede autorizar pedidos del solicitante según rol:
- *  empleado → encargado (su sucursal) / RRHH / dueño
- *  encargado → RRHH / dueño
- *  RRHH → solo dueño
+/** Encargado / encargado externo: solo su sucursal */
+const managerBranch = (ctx) => (baseRole(ctx.user.role) === 'manager' ? ctx.user.branch_id : null);
+/** RRHH (interno o externo) ve operación del negocio; contador no administra cuentas */
+const isStaffAdmin = (ctx) => ctx.user.role === 'owner' || baseRole(ctx.user.role) === 'hr';
+
+/** Quién puede autorizar pedidos del solicitante:
+ *  empleado → encargado (sucursal) / RRHH / dueño
+ *  encargado (int/ext) → RRHH / dueño
+ *  RRHH (int/ext) y contador (int/ext) → solo dueño
  */
 function canDecideFor(decider, requester) {
   if (!requester) return false;
   if (decider.role === 'owner') return true;
-  if (decider.id === requester.id) return false; // nadie se aprueba a sí mismo
-  if (requester.role === 'hr') return false; // solo dueño
-  if (requester.role === 'manager') return decider.role === 'hr';
-  // empleado común
-  if (decider.role === 'hr') return true;
-  if (decider.role === 'manager') return requester.branch_id === decider.branch_id;
+  if (decider.id === requester.id) return false;
+  const reqBase = baseRole(requester.role);
+  const decBase = baseRole(decider.role);
+  if (reqBase === 'hr' || reqBase === 'accountant') return false; // solo dueño
+  if (reqBase === 'manager') return decBase === 'hr';
+  // empleado
+  if (decBase === 'hr') return true;
+  if (decBase === 'manager') return requester.branch_id === decider.branch_id;
   return false;
 }
-
 
 const EMP_COLS = 'id,name,email,role,cargo,branch_id,status,phone,address,birthday,hire_date,shift_start,emg_name,emg_rel,emg_phone,dni,personal_email,blood_type,obra_social,notes,must_change_pw,created_at,last_login';
 
 function getEmp(ctx, id) {
-  const e = get("SELECT * FROM users WHERE id=? AND tenant_id=? AND role IN ('employee','manager','hr')", Number(id), ctx.tenant.id);
+  const e = get(`SELECT * FROM users WHERE id=? AND tenant_id=? AND role IN (${STAFF_SQL})`, Number(id), ctx.tenant.id);
   if (!e) throw notFound('Empleado no encontrado');
   const mb = managerBranch(ctx);
   if (mb && e.branch_id !== mb) throw forbidden('Ese empleado no es de tu sucursal');
   return e;
 }
-/** Jerarquía de cuentas: el dueño gestiona a todos; RRHH a empleados y encargados; el encargado solo a empleados de su sucursal. */
+/** Dueño: todos. RRHH: empleados y encargados (no contadores ni otros RRHH). Encargado: solo empleados de su sucursal. Contador: no gestiona cuentas. */
 function getManagedEmp(ctx, id) {
-  const e = getEmp(ctx, id), r = ctx.user.role;
-  const ok = r === 'owner' || (r === 'hr' && (e.role === 'employee' || e.role === 'manager')) || (r === 'manager' && e.role === 'employee');
+  const e = getEmp(ctx, id);
+  const rBase = baseRole(ctx.user.role);
+  const eBase = baseRole(e.role);
+  let ok = false;
+  if (ctx.user.role === 'owner') ok = true;
+  else if (rBase === 'hr' && (eBase === 'employee' || eBase === 'manager')) ok = true;
+  else if (rBase === 'manager' && eBase === 'employee') ok = true;
   if (!ok) throw forbidden('No tenés permiso para gestionar la cuenta de esa persona');
   return e;
 }
@@ -98,8 +107,8 @@ function hoursByUser(tid, period) {
 function rrhhStats(t, period, branchId = null) {
   const r = H.periodRange(period);
   const emps = branchId
-    ? all("SELECT id,name FROM users WHERE tenant_id=? AND role IN ('employee','manager','hr') AND status='active' AND branch_id=?", t.id, branchId)
-    : all("SELECT id,name FROM users WHERE tenant_id=? AND role IN ('employee','manager','hr') AND status='active'", t.id);
+    ? all(`SELECT id,name FROM users WHERE tenant_id=? AND role IN (${STAFF_SQL}) AND status='active' AND branch_id=`, t.id, branchId)
+    : all(`SELECT id,name FROM users WHERE tenant_id=? AND role IN (${STAFF_SQL}) AND status='active'`, t.id);
   const lateMap = new Map(all("SELECT user_id, COUNT(*) n FROM notifs WHERE tenant_id=? AND type='late' AND created_at>=? AND created_at<? GROUP BY user_id", t.id, r.from, r.to).map((x) => [x.user_id, x.n]));
   const absMap = new Map(all("SELECT user_id, COUNT(*) n FROM notifs WHERE tenant_id=? AND type='absent' AND created_at>=? AND created_at<? GROUP BY user_id", t.id, r.from, r.to).map((x) => [x.user_id, x.n]));
   const hrs = hoursByUser(t.id, period);
@@ -134,14 +143,14 @@ route('GET', '/api/owner/dashboard', A, (ctx) => {
   const t = ctx.tenant, period = periodOf(ctx.query.period);
   const mb = managerBranch(ctx);
   const empSql = mb
-    ? `SELECT ${EMP_COLS} FROM users WHERE tenant_id=? AND role IN ('employee','manager','hr') AND status='active' AND branch_id=? ORDER BY name`
-    : `SELECT ${EMP_COLS} FROM users WHERE tenant_id=? AND role IN ('employee','manager','hr') AND status='active' ORDER BY name`;
+    ? `SELECT ${EMP_COLS} FROM users WHERE tenant_id=? AND role IN (${STAFF_SQL}) AND status='active' AND branch_id=? ORDER BY name`
+    : `SELECT ${EMP_COLS} FROM users WHERE tenant_id=? AND role IN (${STAFF_SQL}) AND status='active' ORDER BY name`;
   const emps = mb ? all(empSql, t.id, mb) : all(empSql, t.id);
   const live = lastMarks(t.id), hrs = hoursByUser(t.id, period);
   const hs = dom.holidaySet(period);
   const expected = H.expectedHours(period, t, hs);
   const wd = H.workingDays(period, hs);
-  const holRows = all("SELECT date,name,kind FROM holidays WHERE substr(date,1,7)=? ORDER BY date", period);
+  const holRows = all(`SELECT date,name,kind FROM holidays WHERE substr(date,1,7)=? ORDER BY date`, period);
   const r = H.periodRange(period);
   const lateMap = new Map(all("SELECT user_id, COUNT(*) n FROM notifs WHERE tenant_id=? AND type='late' AND created_at>=? AND created_at<? GROUP BY user_id", t.id, r.from, r.to).map((x) => [x.user_id, x.n]));
   let normal = 0, extra = 0;
@@ -178,8 +187,11 @@ route('GET', '/api/owner/dashboard', A, (ctx) => {
   const branch = mb ? get('SELECT id,name FROM branches WHERE id=? AND tenant_id=?', mb, t.id) : null;
   return {
     period, expected_per_emp: expected, employees: list,
-    is_manager: ctx.user.role === 'manager',
-    is_hr: ctx.user.role === 'hr',
+    is_manager: baseRole(ctx.user.role) === 'manager',
+    is_hr: baseRole(ctx.user.role) === 'hr',
+    is_accountant: baseRole(ctx.user.role) === 'accountant',
+    role_marks: dom.roleMarks(ctx.user.role),
+    role_label: dom.roleLabel(ctx.user.role),
     manager_branch: branch,
     workdays: { weekdays: wd.weekdays, saturdays: t.dpw === 6 ? wd.saturdays : 0, hpd: t.hpd, sat_h: t.sat_h, dpw: t.dpw },
     holidays: holRows,
@@ -190,7 +202,7 @@ route('GET', '/api/owner/dashboard', A, (ctx) => {
     },
     pending,
     notif_count: notifCount,
-    onboarding: (ctx.user.role === 'manager' || ctx.user.role === 'hr') ? null : onboardingState(t),
+    onboarding: (ctx.user.role === 'owner') ? onboardingState(t) : null,
     rrhh: rrhhStats(t, period, mb),
   };
 });
@@ -201,8 +213,8 @@ route('GET', '/api/owner/employees', A, (ctx) => {
   const live = lastMarks(ctx.tenant.id);
   const mb = managerBranch(ctx);
   const rows = mb
-    ? all(`SELECT ${EMP_COLS} FROM users WHERE tenant_id=? AND role IN ('employee','manager','hr') AND (branch_id=? OR branch_id IS NULL) ORDER BY (status='pending') DESC, name`, ctx.tenant.id, mb)
-    : all(`SELECT ${EMP_COLS} FROM users WHERE tenant_id=? AND role IN ('employee','manager','hr') ORDER BY (status='pending') DESC, name`, ctx.tenant.id);
+    ? all(`SELECT ${EMP_COLS} FROM users WHERE tenant_id=? AND role IN (${STAFF_SQL}) AND (branch_id=? OR branch_id IS NULL) ORDER BY (status='pending') DESC, name`, ctx.tenant.id, mb)
+    : all(`SELECT ${EMP_COLS} FROM users WHERE tenant_id=? AND role IN (${STAFF_SQL}) ORDER BY (status='pending') DESC, name`, ctx.tenant.id);
   return { employees: rows.map((e) => ({ ...empPublic(e), role: e.role || 'employee', state: e.status === 'active' ? stateOf(live.get(e.id)) : null })) };
 });
 
@@ -256,7 +268,7 @@ route('PATCH', '/api/owner/employees/:id', A, (ctx) => {
     emg_phone: b.emg_phone !== undefined ? clean(b.emg_phone, 40) : e.emg_phone,
   };
   if (managerBranch(ctx) && v.branch_id !== managerBranch(ctx)) throw forbidden('Un encargado no puede mover empleados a otra sucursal');
-  // Nunca se guarda ni se re-guarda un valor que el cliente mande ya "cifrado": se conserva el que había.
+  // Nunca se guarda ni se re-guarda un valor que el cliente mande ya cifrado: se conserva el que había.
   for (const k of fc.SENSITIVE_USER) if (b[k] !== undefined && String(v[k] ?? '').startsWith('enc:')) v[k] = e[k];
   if (v.name.length < 2) throw bad('Nombre inválido');
   if (v.birthday && !isoDateOk(v.birthday)) throw bad('Fecha de cumpleaños inválida');
@@ -319,7 +331,7 @@ route('POST', '/api/owner/employees/:id/delete', A_OWNER, (ctx) => {
   if (e.status === 'active') throw bad('Deshabilitalo antes de eliminarlo, o confirmá borrado forzado');
   removeUserFiles(e.id, ctx.tenant.id);
   run('DELETE FROM sessions WHERE user_id=?', e.id);
-  run("DELETE FROM users WHERE id=? AND tenant_id=? AND role IN ('employee','manager','hr')", e.id, ctx.tenant.id);
+  run(`DELETE FROM users WHERE id=? AND tenant_id=? AND role IN (${STAFF_SQL})`, e.id, ctx.tenant.id);
   audit(ctx.user.id, ctx.tenant.id, 'employee.deleted', { id: e.id, name: e.name });
   return { ok: true };
 });
@@ -327,7 +339,7 @@ route('POST', '/api/owner/employees/:id/delete-force', A_OWNER, (ctx) => {
   const e = getEmp(ctx, ctx.params.id);
   removeUserFiles(e.id, ctx.tenant.id);
   run('DELETE FROM sessions WHERE user_id=?', e.id);
-  run("DELETE FROM users WHERE id=? AND tenant_id=? AND role IN ('employee','manager','hr')", e.id, ctx.tenant.id);
+  run(`DELETE FROM users WHERE id=? AND tenant_id=? AND role IN (${STAFF_SQL})`, e.id, ctx.tenant.id);
   audit(ctx.user.id, ctx.tenant.id, 'employee.deleted', { id: e.id, name: e.name, force: true });
   return { ok: true };
 });
@@ -336,14 +348,13 @@ route('POST', '/api/owner/employees/:id/delete-force', A_OWNER, (ctx) => {
 route('POST', '/api/owner/employees/:id/role', A_OWNER, (ctx) => {
   const e = getEmp(ctx, ctx.params.id);
   if (e.id === ctx.user.id) throw bad('No podés cambiarte el rol a vos mismo');
-  const role = ['manager', 'hr', 'employee'].includes(ctx.body.role) ? ctx.body.role : 'employee';
-  if (role === 'manager' && !e.branch_id) throw bad('Asigná una sucursal al empleado antes de hacerlo encargado');
+  const allowed = dom.STAFF_ROLES || ['employee', 'manager', 'hr', 'accountant', 'manager_ext', 'hr_ext', 'accountant_ext'];
+  const role = allowed.includes(ctx.body.role) ? ctx.body.role : 'employee';
+  if (baseRole(role) === 'manager' && !e.branch_id) throw bad('Asigná una sucursal antes de asignar rol de encargado');
   run('UPDATE users SET role=? WHERE id=? AND tenant_id=?', role, e.id, ctx.tenant.id);
-  // Cerrar sesiones del usuario: si era encargado/RRHH y vuelve a empleado (o al revés),
-  // debe volver a ingresar y ver el panel correcto (evita errores y pantallas colgadas).
   sec.destroyUserSessions(e.id);
   audit(ctx.user.id, ctx.tenant.id, 'employee.role', { id: e.id, role, from: e.role });
-  return { ok: true, role };
+  return { ok: true, role, marks: dom.roleMarks(role), label: dom.roleLabel(role) };
 });
 
 route('POST', '/api/owner/employees/:id/reset-password', A, async (ctx) => {
@@ -360,7 +371,7 @@ route('GET', '/api/owner/notifs', A, (ctx) => {
   const mb = managerBranch(ctx);
   let notifs, history, orphan;
   if (mb) {
-    const team = all("SELECT id FROM users WHERE tenant_id=? AND branch_id=? AND role IN ('employee','manager','hr')", ctx.tenant.id, mb).map((u) => u.id);
+    const team = all(`SELECT id FROM users WHERE tenant_id=? AND branch_id=? AND role IN (${STAFF_SQL})`, ctx.tenant.id, mb).map((u) => u.id);
     if (!team.length) {
       notifs = []; history = ctx.query.history ? [] : undefined; orphan = [];
     } else {
@@ -425,8 +436,8 @@ route('POST', '/api/owner/permits/:id/decide', A, (ctx) => {
   if (p.status !== 'pending') throw bad('Esta solicitud ya fue resuelta');
   const requester = get('SELECT id,role,branch_id,name FROM users WHERE id=?', p.user_id);
   if (!canDecideFor(ctx.user, requester)) {
-    if (requester?.role === 'hr') throw forbidden('Los pedidos de RRHH solo los autoriza el dueño');
-    if (requester?.role === 'manager') throw forbidden('Los pedidos del encargado solo los autoriza RRHH o el dueño');
+    if (baseRole(requester?.role) === 'hr' || baseRole(requester?.role) === 'accountant') throw forbidden('Los pedidos de RRHH/contador solo los autoriza el dueño');
+    if (baseRole(requester?.role) === 'manager') throw forbidden('Los pedidos del encargado solo los autoriza RRHH o el dueño');
     throw forbidden('No podés autorizar este pedido');
   }
   const mb = managerBranch(ctx);
@@ -577,8 +588,8 @@ route('PATCH', '/api/owner/emp-requests/:id', A, (ctx) => {
   if (!r) throw notFound();
   const requester = get('SELECT id,role,branch_id FROM users WHERE id=?', r.user_id);
   if (!canDecideFor(ctx.user, requester)) {
-    if (requester?.role === 'hr') throw forbidden('Las solicitudes de RRHH solo las responde el dueño');
-    if (requester?.role === 'manager') throw forbidden('Las solicitudes del encargado solo las responde RRHH o el dueño');
+    if (baseRole(requester?.role) === 'hr' || baseRole(requester?.role) === 'accountant') throw forbidden('Las solicitudes de RRHH/contador solo las responde el dueño');
+    if (baseRole(requester?.role) === 'manager') throw forbidden('Las solicitudes del encargado solo las responde RRHH o el dueño');
     throw forbidden('No podés responder esta solicitud');
   }
   if (r.status !== 'pending' && ctx.body.status && ctx.body.status !== r.status) {
@@ -824,7 +835,7 @@ route('GET', '/api/owner/export/all', A_OWNER, (ctx) => {
       return null;
     }
   };
-  const emps = (safeAll(`SELECT ${EMP_COLS} FROM users WHERE tenant_id=? AND role IN ('employee','manager','hr')`, tid) || [])
+  const emps = (safeAll(`SELECT ${EMP_COLS} FROM users WHERE tenant_id=? AND role IN (${STAFF_SQL})`, tid) || [])
     .map((e) => {
       const d = empPublic(e);
       delete d.pass_hash;
@@ -914,7 +925,7 @@ route('POST', '/api/owner/employees/:id/erase', A_OWNER, (ctx) => {
     run('DELETE FROM docs WHERE user_id=? AND tenant_id=?', e.id, tid);
     run('DELETE FROM notifs WHERE user_id=? AND tenant_id=?', e.id, tid);
     try { run('DELETE FROM emp_requests WHERE user_id=? AND tenant_id=?', e.id, tid); } catch { /* tabla opcional */ }
-    run("DELETE FROM users WHERE id=? AND tenant_id=? AND role IN ('employee','manager','hr')", e.id, tid);
+    run(`DELETE FROM users WHERE id=? AND tenant_id=? AND role IN (${STAFF_SQL}`, e.id, tid);
   });
   for (const rel of docPaths) {
     try {
