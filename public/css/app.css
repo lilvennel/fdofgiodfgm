@@ -1237,3 +1237,44 @@ td.diff-pos{color:#047857;font-weight:600}
 .st-pill--warn{background:#fef3c7;color:#92400e}
 .st-pill--down{background:#fee2e2;color:#991b1b}
 .st-detail{font-size:.75rem;color:var(--muted,#64748b)}
+
+
+/* Onboarding corto + cómo marcar */
+.ob-howto{margin:0 0 8px;padding-left:1.2rem;font-size:.84rem;line-height:1.45;color:var(--text)}
+.ob-howto li{margin:4px 0}
+.ob-help{border-top:1px solid var(--border);padding-top:12px;margin-top:12px}
+.ob-video{position:relative;width:100%;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:#0f172a;margin-top:8px}
+.ob-video iframe,.ob-video video{position:absolute;inset:0;width:100%;height:100%;border:0}
+
+
+/* ---- Role badges & staff banner ---- */
+.role-badge{
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:.68rem;font-weight:700;letter-spacing:.01em;
+  padding:3px 8px 3px 6px;border-radius:999px;vertical-align:middle;
+  margin-left:6px;line-height:1.2;border:1px solid transparent;
+  white-space:nowrap;
+}
+.role-badge .rb-ico{font-size:.75rem;line-height:1}
+.rb-manager{background:#e0f2fe;color:#075985;border-color:#bae6fd}
+.rb-manager-ext{background:#f1f5f9;color:#475569;border-color:#e2e8f0}
+.rb-hr{background:#dcfce7;color:#166534;border-color:#bbf7d0}
+.rb-hr-ext{background:#f0fdf4;color:#3f6212;border-color:#d9f99d}
+.rb-acc{background:#fef9c3;color:#854d0e;border-color:#fde68a}
+.rb-acc-ext{background:#fffbeb;color:#92640a;border-color:#fcd34d}
+.rb-default{background:#f1f5f9;color:#475569;border-color:#e2e8f0}
+
+.role-banner{
+  display:flex;align-items:flex-start;gap:10px;
+  padding:12px 14px;border-radius:12px;margin-bottom:12px;
+  background:linear-gradient(135deg,#f0fdfa 0%,#ecfeff 100%);
+  border:1px solid #99f6e4;color:#115e59;font-size:.86rem;line-height:1.4;
+}
+.role-banner-ico{font-size:1.15rem;line-height:1.2;flex-shrink:0}
+.role-banner-body{flex:1;min-width:0}
+.role-banner-body strong{font-weight:700}
+.role-banner-x{
+  flex-shrink:0;border:0;background:transparent;color:#64748b;
+  cursor:pointer;font-size:.9rem;padding:2px 6px;border-radius:6px;line-height:1;
+}
+.role-banner-x:hover{background:rgba(15,23,42,.06);color:#0f172a}
