@@ -811,12 +811,28 @@ function initLandingEffects() {
   startTypewriter();
   startLiveDemo();
   loadReviews();
-  // bind range directly (más fiable que solo data-input)
-  const range = document.getElementById('sav-emp');
-  if (range) {
-    range.oninput = () => savRecalc();
-  }
+  bindSavCalculator();
   savRecalc();
+}
+
+function bindSavCalculator() {
+  const range = document.getElementById('sav-emp');
+  if (!range) return;
+  const run = () => savRecalc();
+  // input + change + touch: en móvil a veces solo dispara uno
+  range.oninput = run;
+  range.onchange = run;
+  range.ontouchend = run;
+  range.onpointerup = run;
+  // días: por si el data-act no llega
+  document.querySelectorAll('.sav-days button').forEach((btn) => {
+    btn.onclick = (e) => {
+      e.preventDefault();
+      window.__savDays = Number(btn.dataset.d) || 6;
+      document.querySelectorAll('.sav-days button').forEach((b) => b.classList.toggle('on', b === btn));
+      savRecalc();
+    };
+  });
 }
 
 function startTypewriter() {
@@ -923,28 +939,38 @@ function startLiveDemo() {
 window.__savDays = 6;
 function savRecalc() {
   const range = document.getElementById('sav-emp');
-  const emp = Number(range?.value || 8);
-  const days = window.__savDays || 6;
+  if (!range && !document.getElementById('sav-h')) return;
+  const emp = Math.max(2, Math.min(40, Number(range?.value || 8)));
+  const days = Number(window.__savDays) || 6;
   const valEl = document.getElementById('sav-emp-val');
   if (valEl) valEl.textContent = String(emp);
 
-  // Tiempo a mano crece fuerte con el equipo; con AsistOK crece poco
+  // Minutos por día: a mano escala con el equipo; con AsistOK casi fijo
+  // (planilla, horas/extras, avisos)
   const rows = [
-    { old: Math.round(20 + emp * 2.2), neu: Math.round(4 + emp * 0.25) },
-    { old: Math.round(18 + emp * 1.8), neu: Math.round(3 + emp * 0.18) },
-    { old: Math.round(12 + emp * 1.3), neu: Math.round(2 + emp * 0.12) },
+    { old: Math.round(15 + emp * 3.5), neu: Math.round(3 + emp * 0.2) },
+    { old: Math.round(12 + emp * 2.8), neu: Math.round(2 + emp * 0.15) },
+    { old: Math.round(8 + emp * 2.0),  neu: Math.round(1 + emp * 0.1) },
   ];
   const daySaved = rows.reduce((a, r) => a + Math.max(0, r.old - r.neu), 0);
-  const monthMin = daySaved * days * 4.3;
+  // ~4.33 semanas/mes
+  const monthMin = daySaved * days * (52 / 12);
   const monthH = Math.max(1, Math.round(monthMin / 60));
   const jornadas = Math.max(1, Math.round(monthH / 8));
 
   const h = document.getElementById('sav-h');
   if (h) h.textContent = String(monthH);
   const sub = document.getElementById('sav-sub');
-  if (sub) sub.textContent = 'Son ' + jornadas + ' jornada' + (jornadas > 1 ? 's' : '') + ' de 8 horas para dedicarle a tu negocio.';
+  if (sub) {
+    sub.textContent = 'Son ' + jornadas + ' jornada' + (jornadas > 1 ? 's' : '') +
+      ' de 8 horas · ' + emp + ' empleado' + (emp > 1 ? 's' : '') + ' · ' + days + ' días/sem.';
+  }
 
-  const fmt = (m) => (m >= 60 ? (Math.floor(m / 60) + ' h ' + (m % 60) + ' min') : (m + ' min'));
+  const fmt = (m) => {
+    m = Math.max(0, Math.round(m));
+    if (m >= 60) return Math.floor(m / 60) + ' h ' + (m % 60) + ' min';
+    return m + ' min';
+  };
   rows.forEach((r, i) => {
     const o = document.getElementById('sav-o' + (i + 1));
     const n = document.getElementById('sav-n' + (i + 1));
